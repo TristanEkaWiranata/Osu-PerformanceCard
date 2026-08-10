@@ -130,10 +130,45 @@ button { cursor: pointer; font-family: inherit; border: none; background: none; 
 /* ── Header ──────────────────────────────────────────────────────────────── */
 .app-header {
   width: 100%;
-  max-width: 900px;
+  max-width: 1200px;
   padding: 36px 0 0;
   display: flex;
-  justify-content: center;
+  justify-content: space-between;
+  align-items: center;
+  box-sizing: border-box;
+}
+
+.header-changelog-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: transparent;
+  color: var(--clr-text-muted);
+  font-family: var(--font-display);
+  font-size: 0.82rem;
+  font-weight: 600;
+  padding: 10px 18px;
+  border-radius: var(--radius-xl);
+  border: 1.5px solid var(--clr-border);
+  transition: all var(--transition);
+  cursor: pointer;
+  line-height: 1;
+}
+
+.header-changelog-btn:hover {
+  border-color: var(--clr-border-glow);
+  color: var(--clr-text);
+  box-shadow: 0 0 12px rgba(255, 102, 170, 0.15);
+  transform: translateY(-1px);
+}
+
+.header-changelog-btn:active {
+  transform: translateY(0);
+}
+
+.changelog-btn-icon {
+  display: flex;
+  align-items: center;
 }
 
 .brand {
@@ -734,6 +769,14 @@ button { cursor: pointer; font-family: inherit; border: none; background: none; 
   .card-divider { display: none; }
   .card-right { width: 100%; }
   .stats-grid { grid-template-columns: 1fr 1fr; }
+
+  .header-changelog-btn {
+    padding: 8px 12px;
+    gap: 5px;
+  }
+  .changelog-btn-text {
+    display: none;
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -1370,5 +1413,69 @@ button { cursor: pointer; font-family: inherit; border: none; background: none; 
     padding-bottom: 10px;
   }
 }
+
+/* ── Changes Log history mode ────────────────────────────────────────────── */
+
+/* When opened in history mode, the badge text & heading change via JS */
+.changelog-mode-history .changelog-badge {
+  color: var(--clr-cyan);
+  background: rgba(102, 221, 255, 0.08);
+}
+
+/* Each past release block in history mode */
+.changelog-release-entry {
+  padding-bottom: 24px;
+  margin-bottom: 24px;
+  border-bottom: 1px solid var(--clr-border);
+}
+
+.changelog-release-entry:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+  margin-bottom: 0;
+}
+
+/* Release version row */
+.changelog-release-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.changelog-release-version {
+  font-family: var(--font-display);
+  font-size: 0.88rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: #fff;
+}
+
+.changelog-current-badge {
+  font-family: var(--font-display);
+  font-size: 0.58rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--clr-magenta);
+  background: rgba(255, 102, 170, 0.1);
+  padding: 2px 8px;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 102, 170, 0.25);
+}
+
+.changelog-release-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--clr-text);
+  margin-bottom: 2px;
+}
+
+.changelog-release-date {
+  font-size: 0.74rem;
+  color: var(--clr-text-muted);
+  margin-bottom: 14px;
+}
+
 
 

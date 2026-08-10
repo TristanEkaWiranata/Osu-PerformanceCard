@@ -420,7 +420,7 @@ downloadBtn.addEventListener('click', async () => {
     // Pre-load images cross-origin to warm the browser cache
     const avatarSrc = cardAvatar.src;
     const coverSrc  = cardCover.style.backgroundImage
-      ? cardCover.style.backgroundImage.replace(/url\(['"]?(.*?)['"]?\)/, '$1')
+      ? cardCover.style.backgroundImage.replace(/url\(['"']?(.*?)['"']?\)/, '$1')
       : null;
 
     await Promise.all([
@@ -649,91 +649,89 @@ perfRetryBtn.addEventListener('click', () => {
   }
 });
 
-// ─── What's New Changelog Modal ───────────────────────────────────────────────
+// ─── What's New / Changes Log ─────────────────────────────────────────────────
+//
+// To add a new release: prepend a new object to CHANGELOG.releases[]
+// and update CHANGELOG.currentVersion.
+// The automatic first-visit popup fires automatically for the new version.
+//
 
 const CHANGELOG = {
-  version: "v1.5.0",
-  date: "August 10, 2026",
-  title: "Performance Profile Update",
-  sections: [
+  currentVersion: 'v1.5.0',
+  releases: [
     {
-      type: "new",
-      title: "✨ NEW",
-      items: [
+      version: 'v1.5.0',
+      date: 'August 10, 2026',
+      title: 'Performance Profile Update',
+      sections: [
         {
-          name: "Player Skill Ratings",
-          desc: "BeatCard now generates derived player skill ratings for Aim, Speed, Reading Demand, and OD Control. Ratings are presented on a 0–10 scale."
-        }
-      ]
-    },
-    {
-      type: "improved",
-      title: "📊 IMPROVED",
-      items: [
+          type: 'new',
+          title: '✨ NEW',
+          items: [
+            {
+              name: 'Player Skill Ratings',
+              desc: 'BeatCard now generates derived player skill ratings for Aim, Speed, Reading Demand, and OD Control. Ratings are presented on a 0–10 scale.'
+            }
+          ]
+        },
         {
-          name: "20 Best Plays",
-          desc: "Performance analysis now uses up to 20 best plays instead of 10 for a more stable representation of the player's demonstrated skill."
-        }
-      ]
-    },
-    {
-      type: "improved",
-      title: "⚡ IMPROVED",
-      items: [
+          type: 'improved',
+          title: '📊 IMPROVED',
+          items: [
+            {
+              name: '20 Best Plays',
+              desc: "Performance analysis now uses up to 20 best plays instead of 10 for a more stable representation of the player's demonstrated skill."
+            }
+          ]
+        },
         {
-          name: "Performance Cache",
-          desc: "Performance results are cached so repeated searches for the same player are significantly faster."
+          type: 'improved',
+          title: '⚡ IMPROVED',
+          items: [
+            {
+              name: 'Performance Cache',
+              desc: 'Performance results are cached so repeated searches for the same player are significantly faster.'
+            }
+          ]
+        },
+        {
+          type: 'fixed',
+          title: '🐛 FIXED',
+          items: [
+            { desc: 'Fixed playtime display/calculation issues.' },
+            { desc: 'Fixed player level rendering.' },
+            { desc: 'Fixed Performance Profile rendering/loading issues.' },
+            { desc: 'Fixed cached performance results using outdated 10-play calculations.' },
+            { desc: 'Fixed PNG rendering/export issues.' }
+          ]
+        },
+        {
+          type: 'limitations',
+          title: '⚠️ KNOWN LIMITATIONS',
+          items: [
+            { desc: 'Performance Profile currently supports osu! Standard only.' },
+            { desc: 'BeatCard Skill Ratings are BeatCard-derived estimates. They are NOT official osu! statistics.' }
+          ]
         }
-      ]
-    },
-    {
-      type: "fixed",
-      title: "🐛 FIXED",
-      items: [
-        { desc: "Fixed playtime display/calculation issues." },
-        { desc: "Fixed player level rendering." },
-        { desc: "Fixed Performance Profile rendering/loading issues." },
-        { desc: "Fixed cached performance results using outdated 10-play calculations." },
-        { desc: "Fixed PNG rendering/export issues." }
-      ]
-    },
-    {
-      type: "limitations",
-      title: "⚠️ KNOWN LIMITATIONS",
-      items: [
-        { desc: "Performance Profile currently supports osu! Standard only." },
-        { desc: "BeatCard Skill Ratings are BeatCard-derived estimates. They are NOT official osu! statistics." }
       ]
     }
   ]
 };
 
-function initChangelog() {
-  const modalKey = `beatcard_changelog_${CHANGELOG.version}`;
-  const isSeen = localStorage.getItem(modalKey);
+// ── Modal DOM refs ────────────────────────────────────────────────────────────
+const clModal   = document.getElementById('changelogModal');
+const clBadge   = clModal ? clModal.querySelector('.changelog-badge') : null;
+const clTitle   = document.getElementById('changelogTitle');
+const clVersion = document.getElementById('changelogVersion');
+const clDate    = document.getElementById('changelogDate');
+const clBody    = document.getElementById('changelogBody');
+const clCloseX  = document.getElementById('changelogCloseX');
+const clGotIt   = document.getElementById('changelogGotIt');
+const clBtn     = document.getElementById('changelogBtn'); // persistent header button
 
-  if (isSeen) return;
-
-  const modal = document.getElementById('changelogModal');
-  const title = document.getElementById('changelogTitle');
-  const version = document.getElementById('changelogVersion');
-  const date = document.getElementById('changelogDate');
-  const body = document.getElementById('changelogBody');
-  const closeX = document.getElementById('changelogCloseX');
-  const gotItBtn = document.getElementById('changelogGotIt');
-
-  if (!modal || !body) return;
-
-  // Set header info
-  title.textContent = CHANGELOG.title;
-  version.textContent = CHANGELOG.version;
-  date.textContent = CHANGELOG.date;
-
-  // Clear existing content
-  body.innerHTML = '';
-
-  // Render sections
-  CHANGELOG.sections.forEach(sec => {
+// ── Shared: render sections into a container ─────────────────────────────────
+function renderSections(container, sections) {
+  sections.forEach(sec => {
     if (!sec.items || sec.items.length === 0) return;
 
     const sectionEl = document.createElement('div');
@@ -744,8 +742,6 @@ function initChangelog() {
     titleEl.textContent = sec.title;
     sectionEl.appendChild(titleEl);
 
-    // If section contains only items with description (no item name, like fixes/limitations)
-    // render them as a bulleted list
     const hasItemNames = sec.items.some(item => item.name);
 
     if (!hasItemNames) {
@@ -763,56 +759,137 @@ function initChangelog() {
         itemEl.className = 'changelog-item';
 
         if (item.name) {
-          const itemTitle = document.createElement('p');
-          itemTitle.className = 'changelog-item-title';
-          itemTitle.textContent = item.name;
-          itemEl.appendChild(itemTitle);
+          const p = document.createElement('p');
+          p.className = 'changelog-item-title';
+          p.textContent = item.name;
+          itemEl.appendChild(p);
         }
 
-        const itemDesc = document.createElement('p');
-        itemDesc.className = 'changelog-item-desc';
-        itemDesc.textContent = item.desc;
-        itemEl.appendChild(itemDesc);
+        const d = document.createElement('p');
+        d.className = 'changelog-item-desc';
+        d.textContent = item.desc;
+        itemEl.appendChild(d);
 
         sectionEl.appendChild(itemEl);
       });
     }
 
-    body.appendChild(sectionEl);
+    container.appendChild(sectionEl);
   });
+}
 
-  // Show modal
-  modal.hidden = false;
+// ── Show/close modal ─────────────────────────────────────────────────────────
+function openModal(onClose) {
+  if (!clModal) return;
+  clModal.hidden = false;
 
-  const closeModal = () => {
-    localStorage.setItem(modalKey, 'true');
-    modal.hidden = true;
+  let closed = false;
+  const doClose = () => {
+    if (closed) return;
+    closed = true;
+    clModal.hidden = true;
+    clModal.classList.remove('changelog-mode-history');
     document.removeEventListener('keydown', handleEsc);
+    if (onClose) onClose();
   };
 
-  closeX.onclick = closeModal;
-  gotItBtn.onclick = closeModal;
+  clCloseX.onclick = doClose;
+  clGotIt.onclick  = doClose;
 
-  // Backdrop click closes the modal
-  modal.onclick = (e) => {
-    if (e.target === modal) {
-      closeModal();
-    }
+  clModal.onclick = (e) => {
+    if (e.target === clModal) doClose();
   };
 
-  // Keyboard Escape support
   function handleEsc(e) {
-    if (e.key === 'Escape') {
-      closeModal();
-    }
+    if (e.key === 'Escape') doClose();
   }
   document.addEventListener('keydown', handleEsc);
 }
 
-// Initialize changelog on load
+// ── Auto first-visit "What's New" popup ──────────────────────────────────────
+function initChangelog() {
+  const modalKey = `beatcard_changelog_${CHANGELOG.currentVersion}`;
+  if (localStorage.getItem(modalKey)) return;
+
+  const current = CHANGELOG.releases.find(r => r.version === CHANGELOG.currentVersion);
+  if (!current || !clModal) return;
+
+  clModal.classList.remove('changelog-mode-history');
+  if (clBadge) clBadge.textContent = "WHAT'S NEW";
+  clTitle.textContent   = current.title;
+  clVersion.textContent = current.version;
+  clDate.textContent    = current.date;
+  clGotIt.textContent   = 'Got it';
+
+  clBody.innerHTML = '';
+  renderSections(clBody, current.sections);
+
+  openModal(() => {
+    // Mark as seen only when the auto-popup is dismissed
+    localStorage.setItem(modalKey, 'true');
+  });
+}
+
+// ── Manual "Changes Log" button — full release history ───────────────────────
+function openChangelogHistory() {
+  if (!clModal) return;
+
+  clModal.classList.add('changelog-mode-history');
+  if (clBadge) clBadge.textContent = 'CHANGES LOG';
+  clTitle.textContent   = 'Release History';
+  clVersion.textContent = '';
+  clDate.textContent    = '';
+  clGotIt.textContent   = 'Close';
+
+  clBody.innerHTML = '';
+
+  // Releases are stored newest-first; render each as its own block
+  CHANGELOG.releases.forEach(release => {
+    const entryEl = document.createElement('div');
+    entryEl.className = 'changelog-release-entry';
+
+    const headerRow = document.createElement('div');
+    headerRow.className = 'changelog-release-header';
+
+    const versionEl = document.createElement('span');
+    versionEl.className = 'changelog-release-version';
+    versionEl.textContent = release.version;
+    headerRow.appendChild(versionEl);
+
+    if (release.version === CHANGELOG.currentVersion) {
+      const badge = document.createElement('span');
+      badge.className = 'changelog-current-badge';
+      badge.textContent = 'CURRENT';
+      headerRow.appendChild(badge);
+    }
+    entryEl.appendChild(headerRow);
+
+    const titleEl = document.createElement('p');
+    titleEl.className = 'changelog-release-title';
+    titleEl.textContent = release.title;
+    entryEl.appendChild(titleEl);
+
+    const dateEl = document.createElement('p');
+    dateEl.className = 'changelog-release-date';
+    dateEl.textContent = release.date;
+    entryEl.appendChild(dateEl);
+
+    renderSections(entryEl, release.sections);
+    clBody.appendChild(entryEl);
+  });
+
+  // Opening the history manually does NOT mark the auto-popup as seen
+  openModal(null);
+}
+
+// ── Wire up the Changes Log header button ────────────────────────────────────
+if (clBtn) {
+  clBtn.addEventListener('click', openChangelogHistory);
+}
+
+// ── Initialize auto-popup on page load ───────────────────────────────────────
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', initChangelog);
 } else {
   initChangelog();
 }
-
