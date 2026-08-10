@@ -750,13 +750,17 @@ app.get('*', (req, res) => {
   }
 });
 
-// ─── Start ────────────────────────────────────────────────────────────────────
-app.listen(PORT, () => {
-  console.log(`[BeatCard] Server running at http://localhost:${PORT}`);
-  if (credentialsMissing) {
-    console.warn('[BeatCard] WARNING: API credentials are not configured.');
-    console.warn('[BeatCard] Open .env and enter your credentials to enable player lookups.');
-  } else {
-    console.log('[BeatCard] API credentials loaded.');
-  }
-});
+// ─── Start / Export ───────────────────────────────────────────────────────────
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`[BeatCard] Server running at http://localhost:${PORT}`);
+    if (credentialsMissing) {
+      console.warn('[BeatCard] WARNING: API credentials are not configured.');
+      console.warn('[BeatCard] Open .env and enter your credentials to enable player lookups.');
+    } else {
+      console.log('[BeatCard] API credentials loaded.');
+    }
+  });
+}
+
+module.exports = app;
