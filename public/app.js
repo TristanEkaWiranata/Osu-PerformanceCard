@@ -38,8 +38,29 @@ const statAccuracy  = document.getElementById('statAccuracy');
 const statPlayCount = document.getElementById('statPlayCount');
 const statLevel = document.getElementById('statLevel');
 
-// Track the current player for the download filename
-let currentUsername = '';
+// Performance Profile DOM references
+const perfProfileContainer = document.getElementById('perfProfileContainer');
+const perfLoading          = document.getElementById('perfLoading');
+const perfError            = document.getElementById('perfError');
+const perfRetryBtn         = document.getElementById('perfRetryBtn');
+const perfContent          = document.getElementById('perfContent');
+
+const perfValAim           = document.getElementById('perfValAim');
+const perfValSpeed         = document.getElementById('perfValSpeed');
+const perfValReading       = document.getElementById('perfValReading');
+const perfValOd            = document.getElementById('perfValOd');
+
+const perfBarAim           = document.getElementById('perfBarAim');
+const perfBarSpeed         = document.getElementById('perfBarSpeed');
+const perfBarReading       = document.getElementById('perfBarReading');
+const perfBarOd            = document.getElementById('perfBarOd');
+
+const perfSampleSize       = document.getElementById('perfSampleSize');
+
+// Track the current player for the download filename and retries
+let currentUsername      = '';
+let lastSearchedUsername = '';
+let lastSearchedMode     = '';
 
 // ── Utility: number formatters ────────────────────────────────────────────────
 
@@ -223,6 +244,9 @@ async function renderCard(user) {
 
   // Scroll card into view smoothly
   resultSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+  // Trigger performance profile load independently after player card renders
+  loadPerformanceProfile(user.username, user.mode);
 }
 
 // ── API fetch ─────────────────────────────────────────────────────────────────
@@ -501,3 +525,294 @@ document.addEventListener('keydown', (e) => {
     usernameInput.focus();
   }
 });
+
+// ─── Performance Profile Logic ───────────────────────────────────────────────
+
+/**
+ * Fetch performance metrics from the server.
+ * Returns null if the mode is not implemented (501).
+ */
+async function fetchPerformance(username, mode) {
+  const url = `/api/user/${encodeURIComponent(username)}/${encodeURIComponent(mode)}/performance`;
+  const res = await fetch(url);
+  
+  if (res.status === 501) {
+    return null; // Not implemented for this mode - hide performance section silently
+  }
+  
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.message || 'Could not fetch performance data.');
+  }
+  
+  return data;
+}
+
+/**
+ * Populate performance UI with the metrics and update progress bars.
+ */
+function renderPerformanceProfile(data) {
+  if (!data || !data.metrics) {
+    const errorText = perfError.querySelector('.perf-error-text');
+    if (errorText) {
+      errorText.textContent = data?.message || 'Performance Profile unavailable';
+    }
+    perfLoading.hidden = true;
+    perfContent.hidden = true;
+    perfError.hidden   = false;
+    return;
+  }
+
+  const m = data.metrics;
+  
+  // Format numeric values
+  perfValAim.textContent     = `${Number(m.aim ?? 0).toFixed(1)} / 10`;
+  perfValSpeed.textContent   = `${Number(m.speed ?? 0).toFixed(1)} / 10`;
+  perfValReading.textContent = `${Number(m.reading_demand ?? 0).toFixed(1)} / 10`;
+  perfValOd.textContent      = `${Number(m.od_control ?? 0).toFixed(1)} / 10`;
+
+  // Update progress bars (normalized against 10)
+  // Ensure we clamp values between 0 and 10 for safe bar widths (0% to 100%)
+  const clampWidth = (val) => Math.max(0, Math.min(100, (Number(val ?? 0) * 10)));
+  
+  // Use timeout to allow transition to trigger smoothly after element display
+  setTimeout(() => {
+    perfBarAim.style.width     = `${clampWidth(m.aim)}%`;
+    perfBarSpeed.style.width   = `${clampWidth(m.speed)}%`;
+    perfBarReading.style.width = `${clampWidth(m.reading_demand)}%`;
+    perfBarOd.style.width      = `${clampWidth(m.od_control)}%`;
+  }, 50);
+
+  // Set sample size text dynamically
+  perfSampleSize.textContent = `Based on ${data.sample_size} best plays`;
+  
+  perfLoading.hidden = true;
+  perfError.hidden   = true;
+  perfContent.hidden = false;
+}
+
+/**
+ * Load the performance profile flow: handle loading, fetch, render, and error states.
+ */
+async function loadPerformanceProfile(username, mode) {
+  lastSearchedUsername = username;
+  lastSearchedMode     = mode;
+
+  // For V1, we only calculate performance profiles for Standard (osu) mode.
+  // Gated on frontend to prevent useless API calls.
+  if (mode !== 'osu') {
+    perfProfileContainer.hidden = true;
+    return;
+  }
+
+  // Reset display & show loading
+  perfProfileContainer.hidden = false;
+  perfLoading.hidden          = false;
+  perfError.hidden            = true;
+  perfContent.hidden          = true;
+
+  // Reset bar widths to 0 so they animate out and back in
+  perfBarAim.style.width     = '0%';
+  perfBarSpeed.style.width   = '0%';
+  perfBarReading.style.width = '0%';
+  perfBarOd.style.width      = '0%';
+
+  try {
+    const data = await fetchPerformance(username, mode);
+    
+    if (data === null) {
+      // 501 Mode Not Implemented
+      perfProfileContainer.hidden = true;
+      return;
+    }
+    
+    renderPerformanceProfile(data);
+  } catch (err) {
+    console.error('[BeatCard] Performance Profile load failed:', err);
+    
+    // Set standard error message
+    const errorText = perfError.querySelector('.perf-error-text');
+    if (errorText) {
+      errorText.textContent = 'Performance Profile unavailable';
+    }
+    
+    perfLoading.hidden = true;
+    perfContent.hidden = true;
+    perfError.hidden   = false;
+  }
+}
+
+// ── Performance Profile Retry Button ──────────────────────────────────────────
+perfRetryBtn.addEventListener('click', () => {
+  if (lastSearchedUsername && lastSearchedMode) {
+    loadPerformanceProfile(lastSearchedUsername, lastSearchedMode);
+  }
+});
+
+// ─── What's New Changelog Modal ───────────────────────────────────────────────
+
+const CHANGELOG = {
+  version: "v1.5.0",
+  date: "August 10, 2026",
+  title: "Performance Profile Update",
+  sections: [
+    {
+      type: "new",
+      title: "✨ NEW",
+      items: [
+        {
+          name: "Player Skill Ratings",
+          desc: "BeatCard now generates derived player skill ratings for Aim, Speed, Reading Demand, and OD Control. Ratings are presented on a 0–10 scale."
+        }
+      ]
+    },
+    {
+      type: "improved",
+      title: "📊 IMPROVED",
+      items: [
+        {
+          name: "20 Best Plays",
+          desc: "Performance analysis now uses up to 20 best plays instead of 10 for a more stable representation of the player's demonstrated skill."
+        }
+      ]
+    },
+    {
+      type: "improved",
+      title: "⚡ IMPROVED",
+      items: [
+        {
+          name: "Performance Cache",
+          desc: "Performance results are cached so repeated searches for the same player are significantly faster."
+        }
+      ]
+    },
+    {
+      type: "fixed",
+      title: "🐛 FIXED",
+      items: [
+        { desc: "Fixed playtime display/calculation issues." },
+        { desc: "Fixed player level rendering." },
+        { desc: "Fixed Performance Profile rendering/loading issues." },
+        { desc: "Fixed cached performance results using outdated 10-play calculations." },
+        { desc: "Fixed PNG rendering/export issues." }
+      ]
+    },
+    {
+      type: "limitations",
+      title: "⚠️ KNOWN LIMITATIONS",
+      items: [
+        { desc: "Performance Profile currently supports osu! Standard only." },
+        { desc: "BeatCard Skill Ratings are BeatCard-derived estimates. They are NOT official osu! statistics." }
+      ]
+    }
+  ]
+};
+
+function initChangelog() {
+  const modalKey = `beatcard_changelog_${CHANGELOG.version}`;
+  const isSeen = localStorage.getItem(modalKey);
+
+  if (isSeen) return;
+
+  const modal = document.getElementById('changelogModal');
+  const title = document.getElementById('changelogTitle');
+  const version = document.getElementById('changelogVersion');
+  const date = document.getElementById('changelogDate');
+  const body = document.getElementById('changelogBody');
+  const closeX = document.getElementById('changelogCloseX');
+  const gotItBtn = document.getElementById('changelogGotIt');
+
+  if (!modal || !body) return;
+
+  // Set header info
+  title.textContent = CHANGELOG.title;
+  version.textContent = CHANGELOG.version;
+  date.textContent = CHANGELOG.date;
+
+  // Clear existing content
+  body.innerHTML = '';
+
+  // Render sections
+  CHANGELOG.sections.forEach(sec => {
+    if (!sec.items || sec.items.length === 0) return;
+
+    const sectionEl = document.createElement('div');
+    sectionEl.className = `changelog-section changelog-section--${sec.type}`;
+
+    const titleEl = document.createElement('h3');
+    titleEl.className = 'changelog-section-title';
+    titleEl.textContent = sec.title;
+    sectionEl.appendChild(titleEl);
+
+    // If section contains only items with description (no item name, like fixes/limitations)
+    // render them as a bulleted list
+    const hasItemNames = sec.items.some(item => item.name);
+
+    if (!hasItemNames) {
+      const listEl = document.createElement('ul');
+      listEl.className = 'changelog-list';
+      sec.items.forEach(item => {
+        const li = document.createElement('li');
+        li.textContent = item.desc;
+        listEl.appendChild(li);
+      });
+      sectionEl.appendChild(listEl);
+    } else {
+      sec.items.forEach(item => {
+        const itemEl = document.createElement('div');
+        itemEl.className = 'changelog-item';
+
+        if (item.name) {
+          const itemTitle = document.createElement('p');
+          itemTitle.className = 'changelog-item-title';
+          itemTitle.textContent = item.name;
+          itemEl.appendChild(itemTitle);
+        }
+
+        const itemDesc = document.createElement('p');
+        itemDesc.className = 'changelog-item-desc';
+        itemDesc.textContent = item.desc;
+        itemEl.appendChild(itemDesc);
+
+        sectionEl.appendChild(itemEl);
+      });
+    }
+
+    body.appendChild(sectionEl);
+  });
+
+  // Show modal
+  modal.hidden = false;
+
+  const closeModal = () => {
+    localStorage.setItem(modalKey, 'true');
+    modal.hidden = true;
+    document.removeEventListener('keydown', handleEsc);
+  };
+
+  closeX.onclick = closeModal;
+  gotItBtn.onclick = closeModal;
+
+  // Backdrop click closes the modal
+  modal.onclick = (e) => {
+    if (e.target === modal) {
+      closeModal();
+    }
+  };
+
+  // Keyboard Escape support
+  function handleEsc(e) {
+    if (e.key === 'Escape') {
+      closeModal();
+    }
+  }
+  document.addEventListener('keydown', handleEsc);
+}
+
+// Initialize changelog on load
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initChangelog);
+} else {
+  initChangelog();
+}
+

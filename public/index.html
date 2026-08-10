@@ -214,6 +214,81 @@
             </div>
           </div>
         </div>
+
+        <!-- Performance Profile Section -->
+        <div class="perf-profile-container" id="perfProfileContainer" hidden>
+          <div class="perf-header">
+            <h2 class="perf-title">PERFORMANCE PROFILE</h2>
+            <p class="perf-subtitle">BeatCard Derived Metrics</p>
+          </div>
+
+          <!-- Loading state -->
+          <div class="perf-loading" id="perfLoading" hidden>
+            <div class="perf-spinner" aria-hidden="true">
+              <div class="perf-spinner-ring"></div>
+            </div>
+            <p class="perf-loading-text">Analyzing best plays...</p>
+          </div>
+
+          <!-- Error state -->
+          <div class="perf-error" id="perfError" hidden>
+            <p class="perf-error-text">Performance Profile unavailable</p>
+            <button type="button" class="perf-retry-btn" id="perfRetryBtn" aria-label="Retry loading performance profile">Retry</button>
+          </div>
+
+          <!-- Metrics content -->
+          <div class="perf-content" id="perfContent" hidden>
+            <div class="perf-grid">
+              <!-- AIM -->
+              <div class="perf-card perf-card--aim">
+                <div class="perf-card-header">
+                  <span class="perf-metric-name">AIM</span>
+                  <span class="perf-metric-value" id="perfValAim">—</span>
+                </div>
+                <div class="perf-bar-bg" aria-hidden="true">
+                  <div class="perf-bar-fill perf-bar-fill--aim" id="perfBarAim" style="width: 0%"></div>
+                </div>
+              </div>
+
+              <!-- SPEED -->
+              <div class="perf-card perf-card--speed">
+                <div class="perf-card-header">
+                  <span class="perf-metric-name">SPEED</span>
+                  <span class="perf-metric-value" id="perfValSpeed">—</span>
+                </div>
+                <div class="perf-bar-bg" aria-hidden="true">
+                  <div class="perf-bar-fill perf-bar-fill--speed" id="perfBarSpeed" style="width: 0%"></div>
+                </div>
+              </div>
+
+              <!-- READING DEMAND -->
+              <div class="perf-card perf-card--reading">
+                <div class="perf-card-header">
+                  <span class="perf-metric-name">READING DEMAND</span>
+                  <span class="perf-metric-value" id="perfValReading">—</span>
+                </div>
+                <div class="perf-bar-bg" aria-hidden="true">
+                  <div class="perf-bar-fill perf-bar-fill--reading" id="perfBarReading" style="width: 0%"></div>
+                </div>
+              </div>
+
+              <div class="perf-card perf-card--od">
+                <div class="perf-card-header">
+                  <span class="perf-metric-name">OD CONTROL</span>
+                  <span class="perf-metric-value" id="perfValOd">—</span>
+                </div>
+                <div class="perf-bar-bg" aria-hidden="true">
+                  <div class="perf-bar-fill perf-bar-fill--od" id="perfBarOd" style="width: 0%"></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="perf-footer">
+              <span class="perf-sample-size" id="perfSampleSize">Based on 10 best plays</span>
+              <p class="perf-disclaimer">BeatCard-derived Skill Ratings based on the player's best plays. Not official osu! statistics.</p>
+            </div>
+          </div>
+        </div>
       </section>
 
       <!-- Footer -->
@@ -222,6 +297,28 @@
         <p class="footer-credits">Made with ❤️ by <a href="https://github.com/TristanEkaWiranata" target="_blank" rel="noopener noreferrer">Tristan Eka Wiranata</a></p>
       </footer>
     </main>
+
+    <!-- Changelog / What's New Modal -->
+    <div id="changelogModal" class="changelog-overlay" hidden role="dialog" aria-modal="true" aria-labelledby="changelogTitle">
+      <div class="changelog-modal" id="changelogModalContent">
+        <button id="changelogCloseX" class="changelog-close-x" aria-label="Close modal">&times;</button>
+        <div class="changelog-content">
+          <div class="changelog-header">
+            <span class="changelog-badge">WHAT'S NEW</span>
+            <h2 id="changelogTitle" class="changelog-main-title">—</h2>
+            <p class="changelog-meta"><span id="changelogVersion">—</span> &bull; <span id="changelogDate">—</span></p>
+          </div>
+          
+          <div id="changelogBody" class="changelog-body">
+            <!-- Dynamic content populated via JS -->
+          </div>
+
+          <div class="changelog-footer">
+            <button id="changelogGotIt" class="changelog-btn">Got it</button>
+          </div>
+        </div>
+      </div>
+    </div>
 
     <script src="app.js"></script>
   </body>

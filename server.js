@@ -334,10 +334,419 @@ app.get('/api/health', (_req, res) => {
   });
 });
 
+
+
+// ─── BeatCard Performance Calculations ───────────────────────────────────────
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function weightedAverage(values) {
+  if (!values.length) return null;
+
+  let weightedSum = 0;
+  let totalWeight = 0;
+
+  for (const item of values) {
+    const value = Number(item.value);
+    const weight = Number(item.weight);
+
+    if (!Number.isFinite(value) || !Number.isFinite(weight)) {
+      continue;
+    }
+
+    weightedSum += value * weight;
+    totalWeight += weight;
+  }
+
+  if (totalWeight === 0) return null;
+
+  return weightedSum / totalWeight;
+}
+
+function getAdjustedAR(baseAR, mods) {
+  const hasHR = mods.includes('HR');
+  const hasEZ = mods.includes('EZ');
+  const hasDT = mods.includes('DT') || mods.includes('NC');
+  const hasHT = mods.includes('HT');
+  
+  let ar = baseAR;
+  if (hasHR) ar = Math.min(10, ar * 1.4);
+  if (hasEZ) ar = ar * 0.5;
+  
+  if (hasDT) {
+    let ms = ar <= 5 ? (1800 - 120 * ar) : (1200 - 150 * (ar - 5));
+    ms = ms / 1.5;
+    ar = ms >= 1200 ? ((1800 - ms) / 120) : (5 + (1200 - ms) / 150);
+  } else if (hasHT) {
+    let ms = ar <= 5 ? (1800 - 120 * ar) : (1200 - 150 * (ar - 5));
+    ms = ms / 0.75;
+    ar = ms >= 1200 ? ((1800 - ms) / 120) : (5 + (1200 - ms) / 150);
+  }
+  return ar;
+}
+
+function getAdjustedOD(baseOD, mods) {
+  const hasHR = mods.includes('HR');
+  const hasEZ = mods.includes('EZ');
+  const hasDT = mods.includes('DT') || mods.includes('NC');
+  const hasHT = mods.includes('HT');
+  
+  let od = baseOD;
+  if (hasHR) od = Math.min(10, od * 1.4);
+  if (hasEZ) od = od * 0.5;
+  
+  if (hasDT) {
+    let ms = 80 - 6 * od;
+    ms = ms / 1.5;
+    od = (80 - ms) / 6;
+  } else if (hasHT) {
+    let ms = 80 - 6 * od;
+    ms = ms / 0.75;
+    od = (80 - ms) / 6;
+  }
+  return od;
+}
+
+/**
+ * Calculate BeatCard's derived performance profile.
+ *
+ * These are estimates based on the player's top scores.
+ * They are NOT official osu! statistics.
+ */
+function calculatePerformanceProfile(entries, mode) {
+
+  // ── osu! Standard ─────────────────────────────────────────────────────────
+  if (mode === 'osu') {
+
+    const aimValues = [];
+    const speedValues = [];
+    const odValues = [];
+    const readingValues = [];
+
+    for (const entry of entries) {
+      const score = entry.score;
+      const beatmap = entry.beatmap;
+      const attr = entry.attributes;
+
+      const ppWeight = Number(score.pp) > 0 ? Number(score.pp) : 1;
+      const accuracy = Number(score.accuracy) || 0; // decimal 0.0 to 1.0
+      const misses   = Number(score.statistics?.count_miss) || 0;
+
+      const mods = Array.isArray(score.mods)
+        ? score.mods.map(m => (typeof m === 'string' ? m : m.acronym))
+        : [];
+
+      // ── Aim ───────────────────────────────────────────────────────────────
+      if (Number.isFinite(Number(attr.aim_difficulty))) {
+        const aimDiff = Number(attr.aim_difficulty);
+        const aimQuality = clamp(Math.pow(accuracy, 2) * Math.pow(0.95, misses), 0, 1);
+        const aimRaw = aimDiff * aimQuality;
+        aimValues.push({ value: aimRaw, weight: ppWeight });
+      }
+
+      // ── Speed ─────────────────────────────────────────────────────────────
+      if (Number.isFinite(Number(attr.speed_difficulty))) {
+        const speedDiff = Number(attr.speed_difficulty);
+        const speedQuality = clamp(Math.pow(accuracy, 4) * Math.pow(0.98, misses), 0, 1);
+        const speedRaw = speedDiff * speedQuality;
+        speedValues.push({ value: speedRaw, weight: ppWeight });
+      }
+
+      // ── Overall Difficulty / OD Control ──────────────────────────────────
+      const baseOD = Number(beatmap.accuracy);
+      if (Number.isFinite(baseOD)) {
+        const odAdjusted = getAdjustedOD(baseOD, mods);
+        const odClamped = Math.min(10, odAdjusted);
+        const odRaw = clamp(odClamped * Math.pow(accuracy, 2), 0, 10);
+        odValues.push({ value: odRaw, weight: ppWeight });
+      }
+
+      // ── Reading Demand ────────────────────────────────────────────────────
+      const baseAR = Number(beatmap.ar);
+      if (Number.isFinite(baseAR)) {
+        const arAdjusted = getAdjustedAR(baseAR, mods);
+        const reactionPart = arAdjusted * 0.8;
+        const densityPart = arAdjusted < 8 ? (8 - arAdjusted) * 0.6 : 0;
+        const modBonus = (mods.includes('HD') ? 0.8 : 0) + (mods.includes('FL') ? 1.5 : 0);
+        const readingRaw = clamp(reactionPart + densityPart + modBonus, 0, 10) * accuracy;
+        readingValues.push({ value: readingRaw, weight: ppWeight });
+      }
+    }
+
+    const aimRawAvg   = weightedAverage(aimValues);
+    const speedRawAvg = weightedAverage(speedValues);
+    const readingRawAvg = weightedAverage(readingValues);
+    const odRawAvg    = weightedAverage(odValues);
+
+    // Reference maximums
+    const SMAX_AIM     = 7.5;
+    const SMAX_SPEED   = 4.0;
+    const SMAX_READING = 11.5;
+    const SMAX_OD      = 10.0;
+
+    const scaleRating = (raw, smax) => {
+      if (raw === null) return null;
+      const val = clamp(10 * Math.pow(raw / smax, 0.8), 0, 10);
+      return Number(val.toFixed(1));
+    };
+
+    return {
+      aim: scaleRating(aimRawAvg, SMAX_AIM),
+      speed: scaleRating(speedRawAvg, SMAX_SPEED),
+      reading_demand: scaleRating(readingRawAvg, SMAX_READING),
+      od_control: scaleRating(odRawAvg, SMAX_OD),
+    };
+  }
+
+  // Other modes will be implemented after Standard works.
+  return null;
+}
+
+// ─── Performance Profile Cache ────────────────────────────────────────────────
+//
+// In-memory cache keyed by "username:mode".
+// Only derived performance data is stored — no tokens or credentials.
+//
+const PERF_CACHE_TTL_MS       = 10 * 60 * 1000; // 10 minutes
+const PERFORMANCE_SCORE_LIMIT = 20;
+const MIN_VALID_SCORES        = 3;
+
+
+const perfCache    = new Map(); // key → { result, expiresAt }
+const perfInflight = new Map(); // key → Promise  (request deduplication)
+
+function perfCacheGet(key) {
+  const entry = perfCache.get(key);
+  if (!entry) return null;
+  if (Date.now() > entry.expiresAt) { perfCache.delete(key); return null; }
+  return entry.result;
+}
+
+function perfCacheSet(key, result) {
+  perfCache.set(key, { result, expiresAt: Date.now() + PERF_CACHE_TTL_MS });
+}
+
+// ─── Core Computation ────────────────────────────────────────────────────────
+
+/**
+ * Perform all osu! API calls and metric calculations for one player+mode.
+ * Separated from the route handler so the in-flight Promise can be shared
+ * across concurrent requests (request deduplication).
+ */
+async function computePerformanceProfile(username, mode) {
+  const token = await getToken();
+  const headers = {
+    Authorization: `Bearer ${token}`,
+    Accept: 'application/json',
+    'Content-Type': 'application/json',
+  };
+
+  // 1. Resolve user ID
+  const userRes = await fetch(
+    `${OSU_API_BASE}/users/@${encodeURIComponent(username)}/${mode}`,
+    { headers }
+  );
+
+  if (userRes.status === 404) {
+    const e = Object.assign(new Error('USER_NOT_FOUND'), {
+      statusCode: 404,
+      clientMessage: `No osu! player found with username "${username}".`,
+    });
+    throw e;
+  }
+  if (userRes.status === 401) {
+    cachedToken = null; tokenExpiresAt = 0;
+    throw Object.assign(new Error('UPSTREAM_AUTH_ERROR'), {
+      statusCode: 502,
+      clientMessage: 'Could not authenticate with the osu! API.',
+    });
+  }
+  if (userRes.status === 429) {
+    throw Object.assign(new Error('RATE_LIMITED'), {
+      statusCode: 429,
+      clientMessage: 'Too many requests. Please wait a moment and try again.',
+    });
+  }
+  if (!userRes.ok) {
+    throw Object.assign(new Error('UPSTREAM_ERROR'), {
+      statusCode: 502,
+      clientMessage: 'Could not retrieve the player profile from osu!.',
+    });
+  }
+
+  const user = await userRes.json();
+  if (!user || !user.id) {
+    throw Object.assign(new Error('UNEXPECTED_RESPONSE'), {
+      statusCode: 502,
+      clientMessage: 'Received an unexpected response from the osu! API.',
+    });
+  }
+
+  // 2. Fetch best scores
+  const scoresUrl = new URL(`${OSU_API_BASE}/users/${user.id}/scores/best`);
+  scoresUrl.searchParams.set('mode', mode);
+  scoresUrl.searchParams.set('limit', String(PERFORMANCE_SCORE_LIMIT));
+  scoresUrl.searchParams.set('offset', '0');
+  scoresUrl.searchParams.set('legacy_only', '0');
+
+  const scoresRes = await fetch(scoresUrl.toString(), { headers });
+  if (!scoresRes.ok) {
+    throw Object.assign(new Error('SCORES_REQUEST_FAILED'), {
+      statusCode: 502,
+      clientMessage: 'Could not retrieve the player performance scores.',
+    });
+  }
+
+  const scores = await scoresRes.json();
+  if (!Array.isArray(scores) || scores.length === 0) {
+    return { mode, sample_size: 0, cached: false, metrics: null,
+      message: 'No best scores available for this player.' };
+  }
+
+  // 3. Fetch difficulty attributes (all 10 in parallel; failures are skipped)
+  const analyzed = await Promise.all(
+    scores.map(async (score) => {
+      const beatmapId = score.beatmap?.id ?? score.beatmap_id;
+      if (!beatmapId) return null;
+      try {
+        const attrRes = await fetch(
+          `${OSU_API_BASE}/beatmaps/${beatmapId}/attributes`,
+          {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ ruleset: mode, mods: score.mods || [] }),
+          }
+        );
+        if (!attrRes.ok) return null;
+        const attrData = await attrRes.json();
+        return { score, beatmap: score.beatmap || {}, attributes: attrData.attributes || {} };
+      } catch { return null; }
+    })
+  );
+
+  const validScores = analyzed.filter(Boolean);
+
+  if (validScores.length < MIN_VALID_SCORES) {
+    return { mode, sample_size: validScores.length, cached: false, metrics: null,
+      message: 'Not enough score data to calculate a reliable performance profile.' };
+  }
+
+  // 4. Derive BeatCard metrics
+  const metrics = calculatePerformanceProfile(validScores, mode);
+  return { mode, sample_size: validScores.length, cached: false, metrics };
+}
+
+/**
+ * Map thrown errors to safe HTTP responses. Never exposes tokens or secrets.
+ */
+function handlePerfError(err, res) {
+  if (err.statusCode && err.clientMessage) {
+    return res.status(err.statusCode).json({ error: err.message, message: err.clientMessage });
+  }
+  if (['ENOTFOUND','ECONNREFUSED','ETIMEDOUT'].includes(err.code)) {
+    return res.status(503).json({ error: 'NETWORK_ERROR',
+      message: 'Could not reach the osu! API. Please check your internet connection.' });
+  }
+  console.error('[BeatCard] Performance error:', err.code || err.message || 'unknown');
+  return res.status(500).json({ error: 'INTERNAL_ERROR',
+    message: 'Could not calculate the performance profile. Please try again.' });
+}
+
+// ─── Performance Profile Endpoint ────────────────────────────────────────────
+
+/**
+ * GET /api/user/:username/:mode/performance
+ *
+ * BeatCard-derived performance profile.
+ * These values are estimates — NOT official osu! statistics.
+ * Currently only mode=osu is supported.
+ */
+app.get('/api/user/:username/:mode/performance', async (req, res) => {
+  const rawUsername = req.params.username;
+  const mode        = req.params.mode;
+
+  // Validate username
+  if (!validateUsername(rawUsername)) {
+    return res.status(400).json({
+      error: 'INVALID_USERNAME',
+      message: 'Username must be 1\u201320 characters and contain only letters, numbers, spaces, underscores, hyphens, or brackets.',
+    });
+  }
+
+  // Validate mode (uses existing VALID_MODES object — not a Set)
+  if (!Object.hasOwn(VALID_MODES, mode)) {
+    return res.status(400).json({
+      error: 'INVALID_MODE',
+      message: `"${mode}" is not a valid osu! game mode. Valid modes: osu, taiko, fruits, mania.`,
+    });
+  }
+
+  // Only osu standard is implemented for V1
+  if (mode !== 'osu') {
+    return res.status(501).json({
+      error: 'MODE_NOT_IMPLEMENTED',
+      message: `Performance profile for "${mode}" mode is not yet implemented. Only "osu" (osu! Standard) is currently supported.`,
+    });
+  }
+
+  // Credential check
+  if (credentialsMissing) {
+    return res.status(503).json({
+      error: 'SERVER_NOT_CONFIGURED',
+      message: 'The server is not configured with osu! API credentials.',
+    });
+  }
+
+  const username = rawUsername.trim();
+  const cacheKey = `${username}:${mode}:v20`;
+
+  // ── Cache hit ──────────────────────────────────────────────────────────────
+  const hit = perfCacheGet(cacheKey);
+  if (hit) return res.json({ ...hit, cached: true });
+
+  // ── Deduplication: if already in-flight, await the same Promise ───────────
+  if (perfInflight.has(cacheKey)) {
+    try {
+      const result = await perfInflight.get(cacheKey);
+      return res.json({ ...result, cached: true });
+    } catch (err) {
+      return handlePerfError(err, res);
+    }
+  }
+
+  // ── Start new computation ─────────────────────────────────────────────────
+  const promise = computePerformanceProfile(username, mode)
+    .then((result) => {
+      if (result.metrics !== null) perfCacheSet(cacheKey, result);
+      perfInflight.delete(cacheKey);
+      return result;
+    })
+    .catch((err) => {
+      perfInflight.delete(cacheKey);
+      throw err;
+    });
+
+  perfInflight.set(cacheKey, promise);
+
+  try {
+    const result = await promise;
+    return res.json(result);
+  } catch (err) {
+    return handlePerfError(err, res);
+  }
+});
+
 // ─── Catch-all: serve index.html for any non-API route ───────────────────────
 app.get('*', (req, res) => {
   if (!req.path.startsWith('/api')) {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  } else {
+    res.status(404).json({
+      error: 'NOT_FOUND',
+      message: 'API route not found.',
+    });
   }
 });
 
