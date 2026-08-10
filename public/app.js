@@ -657,8 +657,68 @@ perfRetryBtn.addEventListener('click', () => {
 //
 
 const CHANGELOG = {
-  currentVersion: 'v1.5.0',
+  currentVersion: 'v1.5.1',
   releases: [
+    {
+      version: 'v1.5.1',
+      date: 'August 10, 2026',
+      title: 'Mobile Experience Update',
+      sections: [
+        {
+          type: 'new',
+          title: '📱 Mobile Experience',
+          items: [
+            { desc: 'Added a fully responsive mobile layout for BeatCard.' },
+            { desc: 'Optimized the interface for phone screen sizes from 320px up to 430px and beyond.' },
+            { desc: 'Improved spacing, typography, and element sizing on smaller screens.' },
+            { desc: 'Removed horizontal overflow and improved viewport fitting.' }
+          ]
+        },
+        {
+          type: 'improved',
+          title: '🎴 Player Card',
+          items: [
+            { desc: 'Player Card preview now scales proportionally to fit mobile screens.' },
+            { desc: 'The original 1200×630 PNG export remains unchanged.' },
+            { desc: 'Card visuals remain consistent between desktop and mobile.' }
+          ]
+        },
+        {
+          type: 'improved',
+          title: '🔎 Search & Controls',
+          items: [
+            { desc: 'Improved mobile search layout.' },
+            { desc: 'Search controls are easier to use with touch.' },
+            { desc: 'Game mode selection is optimized for smaller screens.' },
+            { desc: 'Download Card and Search Another buttons now have comfortable mobile touch targets.' }
+          ]
+        },
+        {
+          type: 'improved',
+          title: '📊 Performance Profile',
+          items: [
+            { desc: 'Performance Profile now uses a clean single-column layout on mobile.' },
+            { desc: 'Metric cards, values, and progress bars are easier to read on smaller screens.' }
+          ]
+        },
+        {
+          type: 'improved',
+          title: '📝 Changes Log',
+          items: [
+            { desc: 'Optimized the Changes Log / What\'s New modal for mobile.' },
+            { desc: 'On smaller screens it uses a bottom-sheet style layout.' },
+            { desc: 'Long changelog content can scroll without overflowing the viewport.' }
+          ]
+        },
+        {
+          type: 'improved',
+          title: '🖥️ Desktop',
+          items: [
+            { desc: 'Desktop layout and existing visual design remain unchanged.' }
+          ]
+        }
+      ]
+    },
     {
       version: 'v1.5.0',
       date: 'August 10, 2026',

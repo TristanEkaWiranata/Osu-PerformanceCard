@@ -750,32 +750,355 @@ button { cursor: pointer; font-family: inherit; border: none; background: none; 
 /* ── Hidden utility ──────────────────────────────────────────────────────── */
 [hidden] { display: none !important; }
 
-/* ── Responsive ──────────────────────────────────────────────────────────── */
-@media (max-width: 640px) {
-  .app-header { padding-top: 24px; }
-  .brand-name  { font-size: 1.5rem; }
-  .search-section { margin-top: 32px; }
-  .search-btn-text { display: none; }
-  .search-btn { padding: 12px 16px; }
+/* ═══════════════════════════════════════════════════════════════════════════
+   MOBILE RESPONSIVE — BeatCard
+   Breakpoints:
+     ≤ 640px  — small tablet / large phone
+     ≤ 480px  — standard phone portrait
+     ≤ 380px  — compact phone (360px, 375px)
+     ≤ 320px  — very small phone
+   ═══════════════════════════════════════════════════════════════════════════ */
 
-  /* On very small screens, stack the card columns */
-  .card-content {
-    flex-direction: column;
-    padding: 8%;
-    gap: 6%;
+/* ── app-shell: tighter horizontal padding on phone ─────────────────────── */
+@media (max-width: 640px) {
+  .app-shell {
+    padding-left: 16px;
+    padding-right: 16px;
+    padding-bottom: 48px;
   }
-  .card-left { width: 100%; flex-direction: row; align-items: center; gap: 16px; }
-  .card-avatar { max-width: 80px; }
-  .card-divider { display: none; }
-  .card-right { width: 100%; }
-  .stats-grid { grid-template-columns: 1fr 1fr; }
+}
+
+/* ── Header ──────────────────────────────────────────────────────────────── */
+@media (max-width: 640px) {
+  .app-header {
+    padding-top: 20px;
+    gap: 8px;
+  }
+
+  .brand {
+    gap: 10px;
+    min-width: 0;   /* allow shrink */
+  }
+
+  .brand-logo svg {
+    width: 36px;
+    height: 36px;
+  }
+
+  .brand-name {
+    font-size: clamp(1.15rem, 5vw, 1.6rem);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .brand-sub {
+    font-size: 0.62rem;
+  }
 
   .header-changelog-btn {
-    padding: 8px 12px;
+    padding: 9px 12px;
     gap: 5px;
+    flex-shrink: 0;
   }
+
   .changelog-btn-text {
     display: none;
+  }
+}
+
+/* ── Search section ──────────────────────────────────────────────────────── */
+@media (max-width: 640px) {
+  .search-section {
+    margin-top: 28px;
+    gap: 16px;
+  }
+
+  .search-tagline {
+    font-size: 0.88rem;
+  }
+
+  /* Keep the search button icon only to save horizontal space */
+  .search-btn-text { display: none; }
+  .search-btn {
+    padding: 0 16px;
+    min-width: 48px;   /* minimum touch target */
+    min-height: 48px;
+  }
+
+  .search-input-wrap {
+    padding: 6px 6px 6px 14px;
+  }
+
+  .search-input {
+    font-size: 0.95rem;
+  }
+}
+
+/* ── Game mode selector ──────────────────────────────────────────────────── */
+@media (max-width: 640px) {
+  .mode-selector-wrap {
+    width: 100%;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+  }
+
+  .game-mode-select {
+    width: 100%;
+    min-width: 0;
+    padding-top: 11px;
+    padding-bottom: 11px;
+    font-size: 0.9rem;
+  }
+
+  .mode-label {
+    font-size: 0.65rem;
+  }
+}
+
+/* ── Result actions (Download / Search Another) ──────────────────────────── */
+@media (max-width: 640px) {
+  .result-actions {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 10px;
+    justify-content: center;
+  }
+
+  .download-btn,
+  .new-search-btn {
+    min-height: 48px;       /* touch target */
+    padding-top: 12px;
+    padding-bottom: 12px;
+  }
+}
+
+@media (max-width: 380px) {
+  .result-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .download-btn,
+  .new-search-btn {
+    justify-content: center;
+  }
+}
+
+/* ── Card wrapper — responsive scaling ───────────────────────────────────── */
+/*
+  The actual PNG export remains 1200×630.
+  The PREVIEW wrapper is already responsive via aspect-ratio: 1200/630.
+  We only need to ensure horizontal overflow is never produced.
+  The card *content* uses percentage sizing internally so it scales fine.
+*/
+@media (max-width: 640px) {
+  .result-section {
+    margin-top: 24px;
+    gap: 16px;
+  }
+
+  .card-wrapper {
+    /* Ensure no horizontal bleed */
+    width: 100%;
+    max-width: 100%;
+  }
+}
+
+/* ── Performance Profile ─────────────────────────────────────────────────── */
+@media (max-width: 640px) {
+  .perf-profile-container {
+    padding: 20px 16px;
+    margin-top: 20px;
+  }
+
+  .perf-title {
+    font-size: 1.1rem;
+  }
+
+  .perf-subtitle {
+    font-size: 0.68rem;
+  }
+
+  .perf-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .perf-card {
+    padding: 16px 18px;
+    gap: 10px;
+  }
+
+  .perf-metric-value {
+    font-size: 1.35rem;
+  }
+
+  .perf-footer {
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 10px;
+    margin-top: 16px;
+    padding-top: 14px;
+  }
+
+  .perf-disclaimer {
+    text-align: center;
+    font-size: 0.67rem;
+  }
+
+  .perf-retry-btn {
+    min-height: 44px;
+    padding: 10px 28px;
+  }
+}
+
+/* ── Changelog / What's New modal ────────────────────────────────────────── */
+@media (max-width: 640px) {
+  .changelog-overlay {
+    padding: 12px;
+    align-items: flex-end;   /* slide up from bottom on phone */
+  }
+
+  .changelog-modal {
+    max-width: 100%;
+    max-height: 88vh;
+    border-radius: var(--radius-lg) var(--radius-lg) var(--radius-md) var(--radius-md);
+  }
+
+  .changelog-content {
+    padding: 22px 18px;
+  }
+
+  .changelog-main-title {
+    font-size: 1.05rem;
+  }
+
+  .changelog-btn {
+    min-height: 44px;        /* comfortable touch target */
+    padding: 12px 24px;
+  }
+
+  .changelog-footer {
+    justify-content: stretch;
+  }
+
+  .changelog-footer .changelog-btn {
+    width: 100%;             /* full-width on phone */
+    text-align: center;
+    justify-content: center;
+  }
+}
+
+/* Portrait phones where height is also constrained */
+@media (max-width: 640px) and (max-height: 700px) {
+  .changelog-modal {
+    max-height: 92vh;
+  }
+
+  .changelog-content {
+    padding: 16px 16px;
+  }
+
+  .changelog-header {
+    margin-bottom: 12px;
+    padding-bottom: 10px;
+  }
+}
+
+/* ── Compact phone  (≤ 480px) ────────────────────────────────────────────── */
+@media (max-width: 480px) {
+  .app-shell {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+
+  .brand-logo svg {
+    width: 30px;
+    height: 30px;
+  }
+
+  .brand-name {
+    font-size: clamp(1rem, 5.5vw, 1.35rem);
+  }
+
+  .brand-sub {
+    font-size: 0.58rem;
+  }
+}
+
+/* ── Very compact (≤ 380px — 360px / 375px devices) ─────────────────────── */
+@media (max-width: 380px) {
+  .app-shell {
+    padding-left: 10px;
+    padding-right: 10px;
+  }
+
+  /* Hide subtitle text on very narrow screens to preserve branding area */
+  .brand-sub {
+    display: none;
+  }
+
+  .brand-logo svg {
+    width: 28px;
+    height: 28px;
+  }
+
+  .brand-name {
+    font-size: clamp(0.95rem, 6vw, 1.2rem);
+  }
+
+  .search-section {
+    margin-top: 20px;
+    gap: 12px;
+  }
+
+  .perf-profile-container {
+    padding: 16px 12px;
+  }
+
+  .perf-card {
+    padding: 14px 14px;
+  }
+
+  .result-section {
+    margin-top: 16px;
+  }
+
+  .app-footer {
+    margin-top: 32px;
+    font-size: 0.72rem;
+    padding: 0 4px;
+  }
+}
+
+/* ── Smallest phones (≤ 320px) ───────────────────────────────────────────── */
+@media (max-width: 320px) {
+  .app-shell {
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+
+  .brand-logo svg {
+    width: 24px;
+    height: 24px;
+  }
+
+  .brand-name {
+    font-size: 0.95rem;
+  }
+
+  /* Stack modal to full screen on 320px */
+  .changelog-overlay {
+    padding: 0;
+    align-items: flex-end;
+  }
+
+  .changelog-modal {
+    border-radius: var(--radius-md) var(--radius-md) 0 0;
+    max-height: 95vh;
   }
 }
 
@@ -887,21 +1210,7 @@ button { cursor: pointer; font-family: inherit; border: none; background: none; 
    RESPONSIVE — GAME MODE
    ═══════════════════════════════════════════════════════════════════════════ */
 
-@media (max-width: 640px) {
-  .mode-selector-wrap {
-    width: 100%;
-    flex-direction: column;
-    gap: 7px;
-  }
-
-  .game-mode-select {
-    width: 100%;
-  }
-
-  .mode-label {
-    font-size: 0.65rem;
-  }
-}
+/* Game-mode selector mobile rules now in the consolidated block above */
 
 /* ═══════════════════════════════════════════════════════════════════════════
    PERFORMANCE PROFILE SECTION
