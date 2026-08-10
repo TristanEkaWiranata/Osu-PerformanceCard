@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="BeatCard — Generate beautiful osu! player profile cards. Look up any osu! player and download a stunning shareable card." />
+    <title>BeatCard — osu! Profile Card Generator</title>
+
+    <!-- Google Fonts: Exo 2 for headings, Rajdhani for stats, Inter for body -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Exo+2:wght@300;400;600;700;800;900&family=Inter:wght@300;400;500;600&family=Rajdhani:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+    <!-- html2canvas for PNG export -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <!-- ── Animated background ───────────────────────────────────────────── -->
+    <div class="bg-layer" aria-hidden="true">
+      <div class="bg-orb bg-orb--1"></div>
+      <div class="bg-orb bg-orb--2"></div>
+      <div class="bg-orb bg-orb--3"></div>
+      <div class="grid-overlay"></div>
+    </div>
+
+    <!-- ── Main layout ────────────────────────────────────────────────────── -->
+    <main class="app-shell">
+      <!-- Header / Branding -->
+      <header class="app-header">
+        <div class="brand">
+          <div class="brand-logo" aria-hidden="true">
+            <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <circle cx="20" cy="20" r="18" stroke="url(#logoGrad)" stroke-width="2.5" />
+              <circle cx="20" cy="20" r="8" fill="url(#logoGrad)" />
+              <circle cx="20" cy="20" r="3" fill="#0d0d1a" />
+              <defs>
+                <linearGradient id="logoGrad" x1="2" y1="2" x2="38" y2="38" gradientUnits="userSpaceOnUse">
+                  <stop stop-color="#ff66aa" />
+                  <stop offset="1" stop-color="#66ddff" />
+                </linearGradient>
+              </defs>
+            </svg>
+          </div>
+          <div class="brand-text">
+            <span class="brand-name">Beat<span class="brand-accent">Card</span></span>
+            <span class="brand-sub">osu! Profile Card Generator</span>
+          </div>
+        </div>
+      </header>
+
+      <!-- Search section -->
+      <section class="search-section" aria-label="Player search">
+        <p class="search-tagline">Enter an osu! username to generate their card</p>
+
+        <form class="search-form" id="searchForm" autocomplete="off">
+          <!-- Game mode selector -->
+          <div class="mode-selector-wrap">
+            <label for="gameMode" class="mode-label"> Game Mode </label>
+
+            <select id="gameMode" class="game-mode-select" aria-label="osu! game mode">
+              <option value="osu">osu! Standard</option>
+              <option value="taiko">osu! Taiko</option>
+              <option value="fruits">osu! Catch</option>
+              <option value="mania">osu!mania</option>
+            </select>
+          </div>
+
+          <!-- Username search -->
+          <div class="search-input-wrap">
+            <span class="search-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="11" cy="11" r="8" />
+                <line x1="21" y1="21" x2="16.65" y2="16.65" />
+              </svg>
+            </span>
+
+            <input type="text" id="usernameInput" class="search-input" placeholder="e.g. mrekk, cookiezi, WhiteCat…" maxlength="20" aria-label="osu! username" spellcheck="false" />
+
+            <button type="submit" id="searchBtn" class="search-btn" aria-label="Search player">
+              <span class="search-btn-text">Search</span>
+
+              <span class="search-btn-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                  <line x1="5" y1="12" x2="19" y2="12" />
+                  <polyline points="12 5 19 12 12 19" />
+                </svg>
+              </span>
+            </button>
+          </div>
+        </form>
+      </section>
+
+      <!-- Status messages -->
+      <div class="status-area" id="statusArea" aria-live="polite">
+        <!-- Loading state -->
+        <div class="status-card status--loading" id="loadingState" hidden>
+          <div class="loading-spinner" aria-label="Loading">
+            <div class="spinner-ring"></div>
+            <div class="spinner-ring spinner-ring--2"></div>
+          </div>
+          <p class="loading-text">
+            Fetching player data<span class="loading-dots"><span>.</span><span>.</span><span>.</span></span>
+          </p>
+        </div>
+
+        <!-- Error state -->
+        <div class="status-card status--error" id="errorState" hidden role="alert">
+          <div class="error-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10" />
+              <line x1="12" y1="8" x2="12" y2="12" />
+              <line x1="12" y1="16" x2="12.01" y2="16" />
+            </svg>
+          </div>
+          <p class="error-title" id="errorTitle">Something went wrong</p>
+          <p class="error-message" id="errorMessage">Please try again.</p>
+        </div>
+      </div>
+
+      <!-- Card result section -->
+      <section class="result-section" id="resultSection" hidden aria-label="Player card">
+        <!-- Download button (above card) -->
+        <div class="result-actions">
+          <button class="download-btn" id="downloadBtn" aria-label="Download card as PNG">
+            <span class="download-btn-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="7 10 12 15 17 10" />
+                <line x1="12" y1="15" x2="12" y2="3" />
+              </svg>
+            </span>
+            Download Card
+          </button>
+          <button class="new-search-btn" id="newSearchBtn" aria-label="Search for another player">Search Another</button>
+        </div>
+
+        <!-- ──────────────────────────────────────────────────────────────────
+           THE PLAYER CARD  (1200×630 aspect ratio, 1200/630 ≈ 1.905)
+           ────────────────────────────────────────────────────────────────── -->
+        <div class="card-wrapper" id="cardWrapper">
+          <div class="player-card" id="playerCard">
+            <!-- Cover / background -->
+            <div class="card-cover" id="cardCover" aria-hidden="true">
+              <div class="card-cover-overlay"></div>
+            </div>
+
+            <!-- Content layer -->
+            <div class="card-content">
+              <!-- Left column: avatar + identity -->
+              <div class="card-left">
+                <div class="card-avatar-ring">
+                  <img class="card-avatar" id="cardAvatar" src="" alt="Player avatar" loading="eager" />
+                </div>
+                <div class="card-identity">
+                  <h1 class="card-username" id="cardUsername">—</h1>
+
+                  <!-- Selected game mode -->
+                  <span class="card-mode" id="cardMode"> osu! STANDARD </span>
+
+                  <div class="card-country" id="cardCountry">
+                    <img class="card-flag" id="cardFlag" src="" alt="" aria-hidden="true" />
+
+                    <span class="card-country-name" id="cardCountryName"> — </span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Divider -->
+              <div class="card-divider" aria-hidden="true"></div>
+
+              <!-- Right column: stats grid -->
+              <div class="card-right">
+                <div class="stats-grid">
+                  <!-- Global Rank -->
+                  <div class="stat-block stat-block--rank">
+                    <span class="stat-label">Global Rank</span>
+                    <span class="stat-value stat-value--large" id="statRank">—</span>
+                  </div>
+
+                  <!-- Performance Points -->
+                  <div class="stat-block stat-block--pp">
+                    <span class="stat-label">Performance</span>
+                    <span class="stat-value stat-value--large" id="statPP">—</span>
+                  </div>
+
+                  <!-- Accuracy -->
+                  <div class="stat-block">
+                    <span class="stat-label">Accuracy</span>
+                    <span class="stat-value" id="statAccuracy">—</span>
+                  </div>
+
+                  <!-- Play Count -->
+                  <div class="stat-block">
+                    <span class="stat-label">Play Count</span>
+                    <span class="stat-value" id="statPlayCount">—</span>
+                  </div>
+
+                  <!-- Stats Level -->
+                  <div class="stat-block stat-block--wide">
+                    <span class="stat-label">Level</span>
+                    <span class="stat-value" id="statLevel">—</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- osu! branding watermark -->
+            <div class="card-brand" aria-hidden="true">
+              <span class="card-brand-text">BeatCard</span>
+              <span class="card-brand-sep">·</span>
+              <span class="card-brand-osu">osu!</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Footer -->
+      <footer class="app-footer">
+        <p>BeatCard uses the <a href="https://osu.ppy.sh/docs" target="_blank" rel="noopener noreferrer">official osu! API v2</a></p>
+        <p class="footer-credits">Made with ❤️ by <a href="https://github.com/TristanEkaWiranata" target="_blank" rel="noopener noreferrer">Tristan Eka Wiranata</a></p>
+      </footer>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>
