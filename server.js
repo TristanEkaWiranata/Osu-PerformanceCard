@@ -422,8 +422,8 @@ function calculatePerformanceProfile(entries, mode) {
 
     const aimValues = [];
     const speedValues = [];
-    const odValues = [];
-    const readingValues = [];
+    const accuracyValues = [];
+    const staminaRawValues = [];
 
     for (const entry of entries) {
       const score = entry.score;
@@ -454,40 +454,56 @@ function calculatePerformanceProfile(entries, mode) {
         speedValues.push({ value: speedRaw, weight: ppWeight });
       }
 
-      // ── Overall Difficulty / OD Control ──────────────────────────────────
+      // ── Accuracy V2 ───────────────────────────────────────────────────────
+      const count300 = Number(score.statistics?.count_300) || 0;
+      const count100 = Number(score.statistics?.count_100) || 0;
+      const count50  = Number(score.statistics?.count_50) || 0;
+      const timingDenom = count300 + count100 + count50;
+
       const baseOD = Number(beatmap.accuracy);
-      if (Number.isFinite(baseOD)) {
-        const odAdjusted = getAdjustedOD(baseOD, mods);
-        const odClamped = Math.min(10, odAdjusted);
-        const odRaw = clamp(odClamped * Math.pow(accuracy, 2), 0, 10);
-        odValues.push({ value: odRaw, weight: ppWeight });
+      if (timingDenom > 0 && Number.isFinite(baseOD)) {
+        const timingAcc = count300 / timingDenom;
+        const adjustedOD = getAdjustedOD(baseOD, mods);
+        const starRating = Number(attr.star_rating) || 0;
+        const accuracyRaw = adjustedOD * timingAcc * (0.9 + 0.1 * Math.min(8, starRating) / 8);
+        accuracyValues.push({ value: accuracyRaw, weight: ppWeight });
       }
 
-      // ── Reading Demand ────────────────────────────────────────────────────
-      const baseAR = Number(beatmap.ar);
-      if (Number.isFinite(baseAR)) {
-        const arAdjusted = getAdjustedAR(baseAR, mods);
-        const reactionPart = arAdjusted * 0.8;
-        const densityPart = arAdjusted < 8 ? (8 - arAdjusted) * 0.6 : 0;
-        const modBonus = (mods.includes('HD') ? 0.8 : 0) + (mods.includes('FL') ? 1.5 : 0);
-        const readingRaw = clamp(reactionPart + densityPart + modBonus, 0, 10) * accuracy;
-        readingValues.push({ value: readingRaw, weight: ppWeight });
+      // ── Stamina V2 (Per-play raw calculation) ──────────────────────────────
+      if (Number.isFinite(Number(attr.speed_difficulty))) {
+        const speedDifficulty = Number(attr.speed_difficulty) || 0;
+        const speedNoteCount  = Number(attr.speed_note_count) || 0;
+        const hitLength       = Number(beatmap.hit_length) || 0;
+        const staminaQualityPenalty = Math.pow(accuracy, 4) * Math.pow(0.97, misses);
+        const staminaRaw = speedDifficulty * (speedNoteCount / 1000) * (1 - Math.exp(-hitLength / 150)) * staminaQualityPenalty;
+        staminaRawValues.push(staminaRaw);
       }
     }
 
     const aimRawAvg   = weightedAverage(aimValues);
     const speedRawAvg = weightedAverage(speedValues);
-    const readingRawAvg = weightedAverage(readingValues);
-    const odRawAvg    = weightedAverage(odValues);
+    const accuracyRawAvg = weightedAverage(accuracyValues);
+
+    // ── Stamina V2 (Model C Aggregation: Top 5 with Diminishing Weight) ──────
+    staminaRawValues.sort((a, b) => b - a);
+    const top5Stamina = staminaRawValues.slice(0, 5);
+    let staminaRawSum = 0;
+    let staminaWeightSum = 0;
+    top5Stamina.forEach((val, j) => {
+      const weight = Math.pow(0.90, j);
+      staminaRawSum += val * weight;
+      staminaWeightSum += weight;
+    });
+    const staminaRawWeighted = staminaWeightSum > 0 ? staminaRawSum / staminaWeightSum : 0;
 
     // Reference maximums
-    const SMAX_AIM     = 7.5;
-    const SMAX_SPEED   = 4.0;
-    const SMAX_READING = 11.5;
-    const SMAX_OD      = 10.0;
+    const SMAX_AIM      = 7.5;
+    const SMAX_SPEED    = 4.0;
+    const SMAX_ACCURACY = 11.0;
+    const SMAX_STAMINA  = 7.5;
 
     const scaleRating = (raw, smax) => {
-      if (raw === null) return null;
+      if (raw === null || raw === undefined) return null;
       const val = clamp(10 * Math.pow(raw / smax, 0.8), 0, 10);
       return Number(val.toFixed(1));
     };
@@ -495,8 +511,8 @@ function calculatePerformanceProfile(entries, mode) {
     return {
       aim: scaleRating(aimRawAvg, SMAX_AIM),
       speed: scaleRating(speedRawAvg, SMAX_SPEED),
-      reading_demand: scaleRating(readingRawAvg, SMAX_READING),
-      od_control: scaleRating(odRawAvg, SMAX_OD),
+      accuracy: scaleRating(accuracyRawAvg, SMAX_ACCURACY),
+      stamina: scaleRating(staminaRawWeighted, SMAX_STAMINA),
     };
   }
 
@@ -700,7 +716,7 @@ app.get('/api/user/:username/:mode/performance', async (req, res) => {
   }
 
   const username = rawUsername.trim();
-  const cacheKey = `${username}:${mode}:v20`;
+  const cacheKey = `${username}:${mode}:v21`;
 
   // ── Cache hit ──────────────────────────────────────────────────────────────
   const hit = perfCacheGet(cacheKey);

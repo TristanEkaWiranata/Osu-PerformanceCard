@@ -1362,10 +1362,12 @@ button { cursor: pointer; font-family: inherit; border: none; background: none; 
 .perf-card--speed:hover {
   box-shadow: 0 4px 20px rgba(68, 221, 255, 0.05);
 }
-.perf-card--reading:hover {
+.perf-card--reading:hover,
+.perf-card--accuracy:hover {
   box-shadow: 0 4px 20px rgba(167, 139, 250, 0.05);
 }
-.perf-card--od:hover {
+.perf-card--od:hover,
+.perf-card--stamina:hover {
   box-shadow: 0 4px 20px rgba(255, 209, 102, 0.05);
 }
 
@@ -1413,10 +1415,12 @@ button { cursor: pointer; font-family: inherit; border: none; background: none; 
 .perf-bar-fill--speed {
   background: linear-gradient(90deg, var(--clr-cyan-dim) 0%, var(--clr-cyan) 100%);
 }
-.perf-bar-fill--reading {
+.perf-bar-fill--reading,
+.perf-bar-fill--accuracy {
   background: linear-gradient(90deg, #8b5cf6 0%, #a78bfa 100%);
 }
-.perf-bar-fill--od {
+.perf-bar-fill--od,
+.perf-bar-fill--stamina {
   background: linear-gradient(90deg, #d97706 0%, var(--clr-gold) 100%);
 }
 

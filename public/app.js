@@ -47,13 +47,13 @@ const perfContent          = document.getElementById('perfContent');
 
 const perfValAim           = document.getElementById('perfValAim');
 const perfValSpeed         = document.getElementById('perfValSpeed');
-const perfValReading       = document.getElementById('perfValReading');
-const perfValOd            = document.getElementById('perfValOd');
+const perfValAccuracy      = document.getElementById('perfValAccuracy');
+const perfValStamina       = document.getElementById('perfValStamina');
 
 const perfBarAim           = document.getElementById('perfBarAim');
 const perfBarSpeed         = document.getElementById('perfBarSpeed');
-const perfBarReading       = document.getElementById('perfBarReading');
-const perfBarOd            = document.getElementById('perfBarOd');
+const perfBarAccuracy      = document.getElementById('perfBarAccuracy');
+const perfBarStamina       = document.getElementById('perfBarStamina');
 
 const perfSampleSize       = document.getElementById('perfSampleSize');
 
@@ -566,10 +566,10 @@ function renderPerformanceProfile(data) {
   const m = data.metrics;
   
   // Format numeric values
-  perfValAim.textContent     = `${Number(m.aim ?? 0).toFixed(1)} / 10`;
-  perfValSpeed.textContent   = `${Number(m.speed ?? 0).toFixed(1)} / 10`;
-  perfValReading.textContent = `${Number(m.reading_demand ?? 0).toFixed(1)} / 10`;
-  perfValOd.textContent      = `${Number(m.od_control ?? 0).toFixed(1)} / 10`;
+  perfValAim.textContent      = `${Number(m.aim ?? 0).toFixed(1)} / 10`;
+  perfValSpeed.textContent    = `${Number(m.speed ?? 0).toFixed(1)} / 10`;
+  perfValAccuracy.textContent = `${Number(m.accuracy ?? 0).toFixed(1)} / 10`;
+  perfValStamina.textContent  = `${Number(m.stamina ?? 0).toFixed(1)} / 10`;
 
   // Update progress bars (normalized against 10)
   // Ensure we clamp values between 0 and 10 for safe bar widths (0% to 100%)
@@ -577,10 +577,10 @@ function renderPerformanceProfile(data) {
   
   // Use timeout to allow transition to trigger smoothly after element display
   setTimeout(() => {
-    perfBarAim.style.width     = `${clampWidth(m.aim)}%`;
-    perfBarSpeed.style.width   = `${clampWidth(m.speed)}%`;
-    perfBarReading.style.width = `${clampWidth(m.reading_demand)}%`;
-    perfBarOd.style.width      = `${clampWidth(m.od_control)}%`;
+    perfBarAim.style.width      = `${clampWidth(m.aim)}%`;
+    perfBarSpeed.style.width    = `${clampWidth(m.speed)}%`;
+    perfBarAccuracy.style.width = `${clampWidth(m.accuracy)}%`;
+    perfBarStamina.style.width  = `${clampWidth(m.stamina)}%`;
   }, 50);
 
   // Set sample size text dynamically
@@ -612,10 +612,10 @@ async function loadPerformanceProfile(username, mode) {
   perfContent.hidden          = true;
 
   // Reset bar widths to 0 so they animate out and back in
-  perfBarAim.style.width     = '0%';
-  perfBarSpeed.style.width   = '0%';
-  perfBarReading.style.width = '0%';
-  perfBarOd.style.width      = '0%';
+  perfBarAim.style.width      = '0%';
+  perfBarSpeed.style.width    = '0%';
+  perfBarAccuracy.style.width = '0%';
+  perfBarStamina.style.width  = '0%';
 
   try {
     const data = await fetchPerformance(username, mode);
@@ -657,8 +657,49 @@ perfRetryBtn.addEventListener('click', () => {
 //
 
 const CHANGELOG = {
-  currentVersion: 'v1.5.1',
+  currentVersion: 'v1.5.3',
   releases: [
+    {
+      version: 'v1.5.3',
+      date: 'August 13, 2026',
+      title: 'Performance Profile Overhaul',
+      sections: [
+        {
+          type: 'new',
+          title: '✨ Performance Profile Overhaul',
+          items: [
+            { desc: 'Replaced Reading Demand with a new BeatCard Accuracy rating.' },
+            { desc: 'Replaced OD Control with a new BeatCard Stamina rating.' },
+            { desc: 'Performance Profile now focuses on four core skill areas: AIM, SPEED, ACCURACY, and STAMINA.' },
+            { desc: 'Accuracy now evaluates timing precision based on the player\'s actual hit results and map difficulty.' },
+            { desc: 'Stamina now evaluates sustained tapping performance using the player\'s strongest stamina plays.' },
+            { desc: 'Stamina uses the player\'s top 5 stamina performances with a decay weighting system to better represent peak demonstrated stamina.' },
+            { desc: 'AIM and SPEED remain based on the existing BeatCard skill calculation system.' },
+            { desc: 'The Performance Profile continues to analyze up to 20 best plays.' }
+          ]
+        },
+        {
+          type: 'improved',
+          title: '⚡ Performance & Reliability',
+          items: [
+            { desc: 'Improved the distinction between mechanical skill and timing precision.' },
+            { desc: 'Performance Profile results are now more representative of different player skill specializations.' },
+            { desc: 'Added updated caching for the new performance calculation system.' },
+            { desc: 'Performance Profile results load independently from the main player card.' }
+          ]
+        },
+        {
+          type: 'fixed',
+          title: '🐛 Bug Fixes',
+          items: [
+            { desc: 'Fixed a bug where the Performance Profile could remain stuck on "Analyzing best plays..." after the Reading Demand / OD Control metrics were replaced.' },
+            { desc: 'Fixed stale frontend references to the removed Reading Demand and OD Control elements.' },
+            { desc: 'Fixed Performance Profile progress bars not rendering correctly after the metric update.' },
+            { desc: 'Improved frontend stability when rendering Accuracy and Stamina results.' }
+          ]
+        }
+      ]
+    },
     {
       version: 'v1.5.1',
       date: 'August 10, 2026',
