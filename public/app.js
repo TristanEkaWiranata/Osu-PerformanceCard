@@ -139,7 +139,7 @@ function fmtPlayTime(totalSeconds) {
 function buildOsuProfileUrl(username, mode) {
   if (!username) return '#';
   const safeUser = encodeURIComponent(username);
-  const safeMode = mode === 'mania' ? 'mania' : 'osu';
+  const safeMode = mode === 'mania' ? 'mania' : mode === 'fruits' ? 'fruits' : 'osu';
   return `https://osu.ppy.sh/users/${safeUser}/${safeMode}`;
 }
 
@@ -609,6 +609,7 @@ function renderPerformanceProfile(data) {
 
   const m = data.metrics;
   const isMania = data.mode === 'mania';
+  const isFruits = data.mode === 'fruits';
 
   const card1 = document.querySelector('.perf-grid > div:nth-child(1)');
   const card2 = document.querySelector('.perf-grid > div:nth-child(2)');
@@ -617,22 +618,62 @@ function renderPerformanceProfile(data) {
 
   const clampWidth = (val) => Math.max(0, Math.min(100, (Number(val ?? 0) * 10)));
 
-  if (isMania) {
+  if (isFruits) {
+    // Fruits (osu!catch) Layout: MOVEMENT, ACCURACY (2 cards only)
+    if (card1) {
+      card1.style.display = '';
+      card1.className = 'perf-card perf-card--movement';
+      const nameEl = card1.querySelector('.perf-metric-name');
+      if (nameEl) nameEl.textContent = 'MOVEMENT';
+      const barEl = card1.querySelector('.perf-bar-fill');
+      if (barEl) barEl.className = 'perf-bar-fill perf-bar-fill--movement';
+    }
+    if (card2) {
+      card2.style.display = '';
+      card2.className = 'perf-card perf-card--accuracy';
+      const nameEl = card2.querySelector('.perf-metric-name');
+      if (nameEl) nameEl.textContent = 'ACCURACY';
+      const barEl = card2.querySelector('.perf-bar-fill');
+      if (barEl) barEl.className = 'perf-bar-fill perf-bar-fill--accuracy';
+    }
+    if (card3) card3.style.display = 'none';
+    if (card4) card4.style.display = 'none';
+
+    perfValAim.textContent   = `${Number(m.movement ?? 0).toFixed(1)} / 10`;
+    perfValSpeed.textContent = `${Number(m.accuracy ?? 0).toFixed(1)} / 10`;
+
+    setTimeout(() => {
+      perfBarAim.style.width   = `${clampWidth(m.movement)}%`;
+      perfBarSpeed.style.width = `${clampWidth(m.accuracy)}%`;
+    }, 50);
+
+  } else if (isMania) {
+    if (card1) card1.style.display = '';
+    if (card2) card2.style.display = '';
+    if (card3) card3.style.display = '';
+    if (card4) card4.style.display = '';
+
     // Mania Layout: SPEED, ACCURACY, STAMINA, LN CONTROL
     if (card1) {
       card1.className = 'perf-card perf-card--speed';
       const nameEl = card1.querySelector('.perf-metric-name');
       if (nameEl) nameEl.textContent = 'SPEED';
+      const barEl = card1.querySelector('.perf-bar-fill');
+      if (barEl) barEl.className = 'perf-bar-fill perf-bar-fill--speed';
     }
     if (card2) {
       card2.className = 'perf-card perf-card--accuracy';
       const nameEl = card2.querySelector('.perf-metric-name');
       if (nameEl) nameEl.textContent = 'ACCURACY';
+      const barEl = card2.querySelector('.perf-bar-fill');
+      if (barEl) barEl.className = 'perf-bar-fill perf-bar-fill--accuracy';
     }
     if (card3) {
       card3.className = 'perf-card perf-card--stamina';
       const nameEl = card3.querySelector('.perf-metric-name');
       if (nameEl) nameEl.textContent = 'STAMINA';
+      const barEl = card3.querySelector('.perf-bar-fill');
+      if (barEl) barEl.className = 'perf-bar-fill perf-bar-fill--stamina';
     }
     if (card4) {
       card4.className = 'perf-card perf-card--ln';
@@ -655,21 +696,32 @@ function renderPerformanceProfile(data) {
     }, 50);
 
   } else {
+    if (card1) card1.style.display = '';
+    if (card2) card2.style.display = '';
+    if (card3) card3.style.display = '';
+    if (card4) card4.style.display = '';
+
     // Standard (osu) Layout: AIM, SPEED, ACCURACY, STAMINA
     if (card1) {
       card1.className = 'perf-card perf-card--aim';
       const nameEl = card1.querySelector('.perf-metric-name');
       if (nameEl) nameEl.textContent = 'AIM';
+      const barEl = card1.querySelector('.perf-bar-fill');
+      if (barEl) barEl.className = 'perf-bar-fill perf-bar-fill--aim';
     }
     if (card2) {
       card2.className = 'perf-card perf-card--speed';
       const nameEl = card2.querySelector('.perf-metric-name');
       if (nameEl) nameEl.textContent = 'SPEED';
+      const barEl = card2.querySelector('.perf-bar-fill');
+      if (barEl) barEl.className = 'perf-bar-fill perf-bar-fill--speed';
     }
     if (card3) {
       card3.className = 'perf-card perf-card--accuracy';
       const nameEl = card3.querySelector('.perf-metric-name');
       if (nameEl) nameEl.textContent = 'ACCURACY';
+      const barEl = card3.querySelector('.perf-bar-fill');
+      if (barEl) barEl.className = 'perf-bar-fill perf-bar-fill--accuracy';
     }
     if (card4) {
       card4.className = 'perf-card perf-card--stamina';
@@ -707,8 +759,8 @@ async function loadPerformanceProfile(username, mode) {
   lastSearchedUsername = username;
   lastSearchedMode     = mode;
 
-  // Mode gating: currently osu (Standard) and mania are supported
-  if (mode !== 'osu' && mode !== 'mania') {
+  // Mode gating: currently osu (Standard), mania, and fruits are supported
+  if (mode !== 'osu' && mode !== 'mania' && mode !== 'fruits') {
     perfProfileContainer.hidden = true;
     return;
   }
@@ -765,8 +817,48 @@ perfRetryBtn.addEventListener('click', () => {
 //
 
 const CHANGELOG = {
-  currentVersion: 'v1.6.1',
+  currentVersion: 'v1.7.0',
   releases: [
+    {
+      version: 'v1.7.0',
+      date: 'August 14, 2026',
+      title: 'CTB Two-Skill Performance Profile',
+      sections: [
+        {
+          type: 'new',
+          title: '✨ osu!catch (fruits) Performance Profile',
+          items: [
+            { desc: 'Added official support for the osu!catch (fruits / CTB) game mode in BeatCard Performance Profile.' },
+            { desc: 'Reworked CTB skill rating model into 2 dedicated skill dimensions: MOVEMENT and ACCURACY.' },
+            { desc: 'MOVEMENT leverages spatial movement analysis (P95 required velocity) from raw .osu hit object data.' },
+            { desc: 'Added Hyperdash-based spatial movement feature calculation.' },
+            { desc: 'Added REDUCED confidence fallback (calibrated SR × 0.225) when raw .osu data is unavailable.' },
+            { desc: 'Calibrated Movement fallback multiplier from 0.35 to 0.225 to prevent rating overestimation.' },
+            { desc: 'Added CTB movement confidence indicator (FULL / REDUCED).' },
+            { desc: 'Added CTB-specific Accuracy calculation based on droplet judgments (fruits, 100s, 50s).' },
+            { desc: 'osu!catch now displays exactly 2 performance skill cards (MOVEMENT & ACCURACY) instead of 4.' },
+            { desc: 'View Profile button automatically links directly to the player\'s official osu!catch profile.' }
+          ]
+        },
+        {
+          type: 'improved',
+          title: '⚡ Performance & Caching',
+          items: [
+            { desc: 'Implemented raw .osu hit object parsing with safe 2.5-second per-request timeout.' },
+            { desc: 'Added raw .osu hit object caching and batch request throttling to prevent API rate limiting.' },
+            { desc: 'osu! Standard and osu!mania calculations remain 100% unchanged.' }
+          ]
+        },
+        {
+          type: 'improved',
+          title: '📱 Mobile Experience',
+          items: [
+            { desc: 'Optimized the 2-card CTB Performance Profile grid layout for mobile viewports (320px and up).' },
+            { desc: 'Maintained responsive card scaling across desktop and mobile screens.' }
+          ]
+        }
+      ]
+    },
     {
       version: 'v1.6.1',
       date: 'August 13, 2026',

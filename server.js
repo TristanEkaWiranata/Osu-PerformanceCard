@@ -409,6 +409,81 @@ function getAdjustedOD(baseOD, mods) {
   return od;
 }
 
+// ─── CTB Raw Beatmap Helper & Cache ──────────────────────────────────────────
+const rawOsuCache = new Map(); // beatmapId -> { vP95, hyperdashRatio }
+
+function parseOsuHitObjects(text) {
+  const lines = text.split('\n');
+  let inHitObjects = false;
+  const objects = [];
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed === '[HitObjects]') { inHitObjects = true; continue; }
+    if (inHitObjects && trimmed.startsWith('[')) { inHitObjects = false; }
+    if (inHitObjects && trimmed) {
+      const parts = trimmed.split(',');
+      if (parts.length >= 4) {
+        objects.push({ x: Number(parts[0]), y: Number(parts[1]), time: Number(parts[2]), type: Number(parts[3]) });
+      }
+    }
+  }
+  return objects;
+}
+
+function getCatcherHalfWidth(cs) {
+  const scale = 305.7 * (1.0 - 0.7 * (cs - 5.0) / 5.0) * 0.5;
+  return scale * 0.35;
+}
+
+function percentiles(vals) {
+  const sorted = [...vals].sort((a, b) => a - b);
+  if (!sorted.length) return { p95: 0 };
+  const idx = Math.min(sorted.length - 1, Math.floor(0.95 * sorted.length));
+  return { p95: sorted[idx] };
+}
+
+async function getRawOsuMovementFeatures(beatmapId, cs = 5.0) {
+  if (rawOsuCache.has(beatmapId)) {
+    return rawOsuCache.get(beatmapId);
+  }
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 2500); // 2.5s safety timeout
+
+    const res = await fetch(`https://osu.ppy.sh/osu/${beatmapId}`, { signal: controller.signal });
+    clearTimeout(timeoutId);
+
+    if (!res.ok) return null;
+    const text = await res.text();
+    const objs = parseOsuHitObjects(text);
+    if (objs.length < 2) return null;
+
+    const halfWidth = getCatcherHalfWidth(cs);
+    const vels = [];
+    let hyperdashCount = 0;
+
+    for (let i = 1; i < objs.length; i++) {
+      const dt = Math.max(1, objs[i].time - objs[i-1].time);
+      const dx = Math.abs(objs[i].x - objs[i-1].x);
+      const effDist = Math.max(0, dx - halfWidth);
+      const vReq = effDist / dt;
+
+      vels.push(vReq);
+      if (vReq > 1.50) hyperdashCount++;
+    }
+
+    const vP95 = percentiles(vels).p95;
+    const hyperdashRatio = hyperdashCount / Math.max(1, objs.length - 1);
+
+    const feat = { vP95, hyperdashRatio };
+    rawOsuCache.set(beatmapId, feat);
+    return feat;
+  } catch {
+    return null; // Graceful fallback on network error/timeout
+  }
+}
+
 /**
  * Calculate BeatCard's derived performance profile.
  *
@@ -642,7 +717,94 @@ function calculatePerformanceProfile(entries, mode) {
     };
   }
 
-  // Other modes will be implemented after Standard and Mania work.
+  // ── osu!catch (fruits) ───────────────────────────────────────────────────
+  if (mode === 'fruits') {
+    const movementRawValues = [];
+    const accuracyRawValues = [];
+    let fullConfidenceCount = 0;
+
+    for (const entry of entries) {
+      const score = entry.score;
+      const beatmap = entry.beatmap;
+      const attr = entry.attributes;
+
+      const accuracy = Number(score.accuracy) || 0; // decimal 0.0 to 1.0
+      const misses   = Number(score.statistics?.count_miss) || 0;
+      const starRating = Number(attr.star_rating) || Number(beatmap.difficulty_rating) || 0;
+
+      const circles = Number(beatmap.count_circles) || 0;
+      const sliders = Number(beatmap.count_sliders) || 0;
+      const totalObjects = Number(beatmap.count_spinners) > 0 
+        ? circles + sliders + Number(beatmap.count_spinners) 
+        : circles + sliders;
+      const effObjects = totalObjects > 0 ? totalObjects : (Number(score.statistics?.count_300) || 1);
+      const missRate = misses / effObjects;
+
+      // ── Movement Raw ──────────────────────────────────────────────────────
+      const rawFeat = entry.rawMovementFeatures;
+      let movementRaw = 0;
+      if (rawFeat && typeof rawFeat.vP95 === 'number') {
+        fullConfidenceCount++;
+        movementRaw = rawFeat.vP95 * (1 + 0.15 * rawFeat.hyperdashRatio) * accuracy * Math.exp(-5 * missRate);
+      } else {
+        // Fallback: REDUCED confidence (SR * 0.225 aligns 10.0* SR with average full spatial velocity ~2.25 px/ms)
+        movementRaw = (starRating * 0.225) * accuracy * Math.exp(-5 * missRate);
+      }
+      movementRawValues.push(movementRaw);
+
+      // ── Accuracy Raw ──────────────────────────────────────────────────────
+      const c300 = Number(score.statistics?.count_300) || 0;
+      const c100 = Number(score.statistics?.count_100) || 0;
+      const c50  = Number(score.statistics?.count_50) || 0;
+      const cKatu= Number(score.statistics?.count_katu) || 0;
+
+      const denom = c300 + c100 + c50 + cKatu + misses;
+      const dropletQuality = denom > 0 ? (c300 + c100 + c50) / denom : accuracy;
+      const accuracyBase = 0.70 * dropletQuality + 0.30 * accuracy;
+      const difficultyFactor = 0.85 + 0.15 * Math.min(10, starRating) / 10;
+      const accuracyRaw = accuracyBase * difficultyFactor * Math.exp(-15 * missRate);
+
+      accuracyRawValues.push(accuracyRaw);
+    }
+
+    // Top 5 Movement Aggregation (Decay 0.90^j)
+    movementRawValues.sort((a, b) => b - a);
+    const top5Movement = movementRawValues.slice(0, 5);
+    let movSum = 0, movW = 0;
+    top5Movement.forEach((val, j) => {
+      const w = Math.pow(0.90, j);
+      movSum += val * w;
+      movW += w;
+    });
+    const movementRawWeighted = movW > 0 ? movSum / movW : 0;
+
+    // Top 5 Accuracy Aggregation (Decay 0.90^j)
+    accuracyRawValues.sort((a, b) => b - a);
+    const top5Acc = accuracyRawValues.slice(0, 5);
+    let accSum = 0, accW = 0;
+    top5Acc.forEach((val, j) => {
+      const w = Math.pow(0.90, j);
+      accSum += val * w;
+      accW += w;
+    });
+    const accuracyRawWeighted = accW > 0 ? accSum / accW : 0;
+
+    const scaleRating = (raw, smax, exp = 0.8) => {
+      if (raw === null || raw === undefined) return null;
+      const val = clamp(10 * Math.pow(raw / smax, exp), 0, 10);
+      return Number(val.toFixed(1));
+    };
+
+    const confidence = fullConfidenceCount >= 3 ? 'FULL' : 'REDUCED';
+
+    return {
+      movement: scaleRating(movementRawWeighted, 3.50, 0.85),
+      accuracy: scaleRating(accuracyRawWeighted, 1.00, 1.00),
+      movement_confidence: confidence,
+    };
+  }
+
+  // Other modes will be implemented after Standard, Mania, and Catch.
   return null;
 }
 
@@ -747,7 +909,7 @@ async function computePerformanceProfile(username, mode) {
       message: 'No best scores available for this player.' };
   }
 
-  // 3. Fetch difficulty attributes (all 10 in parallel; failures are skipped)
+  // 3. Fetch difficulty attributes (all in parallel; failures are skipped)
   const analyzed = await Promise.all(
     scores.map(async (score) => {
       const beatmapId = score.beatmap?.id ?? score.beatmap_id;
@@ -763,7 +925,7 @@ async function computePerformanceProfile(username, mode) {
         );
         if (!attrRes.ok) return null;
         const attrData = await attrRes.json();
-        return { score, beatmap: score.beatmap || {}, attributes: attrData.attributes || {} };
+        return { score, beatmap: score.beatmap || {}, attributes: attrData.attributes || {}, rawMovementFeatures: null };
       } catch { return null; }
     })
   );
@@ -773,6 +935,23 @@ async function computePerformanceProfile(username, mode) {
   if (validScores.length < MIN_VALID_SCORES) {
     return { mode, sample_size: validScores.length, cached: false, metrics: null,
       message: 'Not enough score data to calculate a reliable performance profile.' };
+  }
+
+  // If fruits mode, fetch raw .osu movement features in batches of 4 to prevent 429 rate limits
+  if (mode === 'fruits') {
+    const BATCH_SIZE = 4;
+    for (let i = 0; i < validScores.length; i += BATCH_SIZE) {
+      const batch = validScores.slice(i, i + BATCH_SIZE);
+      await Promise.all(batch.map(async (entry) => {
+        const beatmapId = entry.score.beatmap?.id ?? entry.score.beatmap_id;
+        if (!beatmapId) return;
+        const cs = Number(entry.beatmap?.cs) || 5.0;
+        entry.rawMovementFeatures = await getRawOsuMovementFeatures(beatmapId, cs);
+      }));
+      if (i + BATCH_SIZE < validScores.length) {
+        await new Promise(r => setTimeout(r, 60)); // 60ms batch delay
+      }
+    }
   }
 
   // 4. Derive BeatCard metrics
@@ -803,7 +982,7 @@ function handlePerfError(err, res) {
  *
  * BeatCard-derived performance profile.
  * These values are estimates — NOT official osu! statistics.
- * Currently only mode=osu is supported.
+ * Supported modes: osu (Standard), mania (osu!mania), fruits (osu!catch).
  */
 app.get('/api/user/:username/:mode/performance', async (req, res) => {
   const rawUsername = req.params.username;
@@ -825,11 +1004,11 @@ app.get('/api/user/:username/:mode/performance', async (req, res) => {
     });
   }
 
-  // Only osu standard and mania are implemented
-  if (mode !== 'osu' && mode !== 'mania') {
+  // Only osu standard, mania, and fruits are implemented
+  if (mode !== 'osu' && mode !== 'mania' && mode !== 'fruits') {
     return res.status(501).json({
       error: 'MODE_NOT_IMPLEMENTED',
-      message: `Performance profile for "${mode}" mode is not yet implemented. Only "osu" (osu! Standard) and "mania" (osu!mania) are currently supported.`,
+      message: `Performance profile for "${mode}" mode is not yet implemented. Only "osu" (osu! Standard), "mania" (osu!mania), and "fruits" (osu!catch) are currently supported.`,
     });
   }
 
@@ -842,7 +1021,7 @@ app.get('/api/user/:username/:mode/performance', async (req, res) => {
   }
 
   const username = rawUsername.trim();
-  const cacheVersion = mode === 'mania' ? 'v23' : 'v24';
+  const cacheVersion = mode === 'mania' ? 'v23' : mode === 'fruits' ? 'v1_fruits' : 'v24';
   const cacheKey = `${username}:${mode}:${cacheVersion}`;
 
   // ── Cache hit ──────────────────────────────────────────────────────────────

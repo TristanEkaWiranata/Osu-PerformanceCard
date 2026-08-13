@@ -1404,6 +1404,7 @@ button { cursor: pointer; font-family: inherit; border: none; background: none; 
 .perf-card--stamina:hover {
   box-shadow: 0 4px 20px rgba(255, 209, 102, 0.05);
 }
+.perf-card--movement:hover,
 .perf-card--ln:hover {
   box-shadow: 0 4px 20px rgba(16, 185, 129, 0.08);
 }
@@ -1460,6 +1461,7 @@ button { cursor: pointer; font-family: inherit; border: none; background: none; 
 .perf-bar-fill--stamina {
   background: linear-gradient(90deg, #d97706 0%, var(--clr-gold) 100%);
 }
+.perf-bar-fill--movement,
 .perf-bar-fill--ln {
   background: linear-gradient(90deg, #10b981 0%, #34d399 100%);
 }
