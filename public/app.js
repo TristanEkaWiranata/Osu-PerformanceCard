@@ -23,6 +23,15 @@ const errorMessage = document.getElementById('errorMessage');
 const resultSection = document.getElementById('resultSection');
 const downloadBtn   = document.getElementById('downloadBtn');
 const newSearchBtn  = document.getElementById('newSearchBtn');
+const viewProfileBtn = document.getElementById('viewProfileBtn');
+
+// Profile confirmation modal DOM elements
+const profileConfirmModal   = document.getElementById('profileConfirmModal');
+const profileConfirmCloseX = document.getElementById('profileConfirmCloseX');
+const confirmUsername       = document.getElementById('confirmUsername');
+const confirmModeName       = document.getElementById('confirmModeName');
+const confirmCancelBtn      = document.getElementById('confirmCancelBtn');
+const confirmVisitBtn       = document.getElementById('confirmVisitBtn');
 
 // Card DOM elements
 const cardCover       = document.getElementById('cardCover');
@@ -59,8 +68,10 @@ const perfSampleSize       = document.getElementById('perfSampleSize');
 
 // Track the current player for the download filename and retries
 let currentUsername      = '';
+let currentMode          = 'osu';
 let lastSearchedUsername = '';
 let lastSearchedMode     = '';
+let pendingProfileUrl    = '#';
 
 // ── Utility: number formatters ────────────────────────────────────────────────
 
@@ -120,7 +131,30 @@ function fmtPlayTime(totalSeconds) {
 
 // ── UI state helpers ──────────────────────────────────────────────────────────
 
+/**
+ * Safely build the official osu! profile URL for a user and mode.
+ * @param {string} username
+ * @param {string} mode
+ */
+function buildOsuProfileUrl(username, mode) {
+  if (!username) return '#';
+  const safeUser = encodeURIComponent(username);
+  const safeMode = mode === 'mania' ? 'mania' : 'osu';
+  return `https://osu.ppy.sh/users/${safeUser}/${safeMode}`;
+}
+
+/**
+ * Clear the View Profile button link state during loading, error, or search resets.
+ */
+function clearViewProfileUrl() {
+  if (viewProfileBtn) {
+    viewProfileBtn.href = '#';
+    viewProfileBtn.removeAttribute('aria-label');
+  }
+}
+
 function showLoading() {
+  clearViewProfileUrl();
   loadingState.hidden = false;
   errorState.hidden   = true;
   resultSection.hidden = true;
@@ -131,6 +165,7 @@ function hideLoading() {
 }
 
 function showError(title, message) {
+  clearViewProfileUrl();
   hideLoading();
   errorTitle.textContent   = title;
   errorMessage.textContent = message;
@@ -148,6 +183,7 @@ function setSearchBusy(busy) {
 }
 
 function resetToSearch() {
+  clearViewProfileUrl();
   resultSection.hidden = true;
   hideError();
   hideLoading();
@@ -172,6 +208,7 @@ function proxyImageUrl(url) {
  */
 async function renderCard(user) {
   currentUsername = user.username || 'player';
+  currentMode     = user.mode || 'osu';
 
   // ── Avatar ──────────────────────────────────────────────────────────────
   if (user.avatar_url) {
@@ -236,6 +273,13 @@ async function renderCard(user) {
   statAccuracy.textContent  = fmtAccuracy(s.hit_accuracy);
   statPlayCount.textContent = fmtNumber(s.play_count);
   statLevel.textContent = user.statistics?.level?.current ?? '—';
+
+  // ── View Profile URL ───────────────────────────────────────────────────
+  if (viewProfileBtn) {
+    const profileUrl = buildOsuProfileUrl(user.username, user.mode);
+    viewProfileBtn.href = profileUrl;
+    viewProfileBtn.setAttribute('aria-label', `View ${user.username}'s osu! profile`);
+  }
 
   // ── Show card ───────────────────────────────────────────────────────────
   hideLoading();
@@ -721,8 +765,46 @@ perfRetryBtn.addEventListener('click', () => {
 //
 
 const CHANGELOG = {
-  currentVersion: 'v1.6.0',
+  currentVersion: 'v1.6.1',
   releases: [
+    {
+      version: 'v1.6.1',
+      date: 'August 13, 2026',
+      title: 'Performance & Profile Experience Update',
+      sections: [
+        {
+          type: 'new',
+          title: '✨ Player Profile',
+          items: [
+            { desc: "Added a View Profile button to quickly open the player's official osu! profile." },
+            { desc: 'View Profile automatically follows the currently selected game mode.' },
+            { desc: 'Standard profiles open directly to the osu! Standard profile page.' },
+            { desc: 'Mania profiles open directly to the osu!mania profile page.' },
+            { desc: 'The profile link opens in a new browser tab while keeping BeatCard open.' }
+          ]
+        },
+        {
+          type: 'improved',
+          title: '⚡ Performance Profile',
+          items: [
+            { desc: 'Recalibrated the osu! Standard Stamina calculation to better represent sustained tapping performance.' },
+            { desc: 'Improved Stamina scaling across burst, stream, marathon, and high-density plays.' },
+            { desc: 'Standard Stamina now uses the calibrated Candidate D model with logarithmic note-density scaling.' },
+            { desc: 'Updated Standard performance caching to v24 for the new Stamina calculation.' },
+            { desc: 'osu!mania Performance calculations remain unchanged.' }
+          ]
+        },
+        {
+          type: 'improved',
+          title: '📱 Mobile Experience',
+          items: [
+            { desc: 'Optimized the View Profile action for mobile screen sizes.' },
+            { desc: 'Maintained accessible touch targets and prevented horizontal overflow on narrow screens.' },
+            { desc: 'View Profile remains fully usable from 320px mobile widths and above.' }
+          ]
+        }
+      ]
+    },
     {
       version: 'v1.6.0',
       date: 'August 13, 2026',
@@ -1094,7 +1176,54 @@ if (clBtn) {
 
 // ── Initialize auto-popup on page load ───────────────────────────────────────
 if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', initChangelog);
+  document.addEventListener('DOMContentLoaded', () => {
+    initChangelog();
+  });
 } else {
   initChangelog();
 }
+
+// ── Profile confirmation modal logic ──────────────────────────────────────────
+function openProfileConfirmModal(url, username, mode) {
+  pendingProfileUrl = url;
+  if (confirmUsername) confirmUsername.textContent = username || 'Player';
+  if (confirmModeName) confirmModeName.textContent = mode === 'mania' ? 'osu!mania' : 'osu!';
+  if (profileConfirmModal) profileConfirmModal.hidden = false;
+}
+
+function closeProfileConfirmModal() {
+  if (profileConfirmModal) profileConfirmModal.hidden = true;
+  pendingProfileUrl = '#';
+}
+
+if (viewProfileBtn) {
+  viewProfileBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    if (!viewProfileBtn.href || viewProfileBtn.href.endsWith('#')) return;
+    openProfileConfirmModal(viewProfileBtn.href, currentUsername, currentMode);
+  });
+}
+
+if (confirmCancelBtn) confirmCancelBtn.addEventListener('click', closeProfileConfirmModal);
+if (profileConfirmCloseX) profileConfirmCloseX.addEventListener('click', closeProfileConfirmModal);
+
+if (confirmVisitBtn) {
+  confirmVisitBtn.addEventListener('click', () => {
+    if (pendingProfileUrl && !pendingProfileUrl.endsWith('#')) {
+      window.open(pendingProfileUrl, '_blank', 'noopener,noreferrer');
+    }
+    closeProfileConfirmModal();
+  });
+}
+
+if (profileConfirmModal) {
+  profileConfirmModal.addEventListener('click', (e) => {
+    if (e.target === profileConfirmModal) closeProfileConfirmModal();
+  });
+}
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && profileConfirmModal && !profileConfirmModal.hidden) {
+    closeProfileConfirmModal();
+  }
+});

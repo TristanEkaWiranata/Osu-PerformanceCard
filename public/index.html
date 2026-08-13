@@ -144,6 +144,16 @@
             Download Card
           </button>
           <button class="new-search-btn" id="newSearchBtn" aria-label="Search for another player">Search Another</button>
+          <a class="view-profile-btn" id="viewProfileBtn" href="#" target="_blank" rel="noopener noreferrer">
+            <span class="view-profile-btn-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                <polyline points="15 3 21 3 21 9" />
+                <line x1="10" y1="14" x2="21" y2="3" />
+              </svg>
+            </span>
+            View Profile
+          </a>
         </div>
 
         <!-- ──────────────────────────────────────────────────────────────────
@@ -330,7 +340,39 @@
         </div>
       </div>
     </div>
+    <!-- Profile Confirmation Modal -->
+    <div id="profileConfirmModal" class="changelog-overlay" hidden role="dialog" aria-modal="true" aria-labelledby="profileConfirmTitle">
+      <div class="confirm-modal" id="profileConfirmContent">
+        <button id="profileConfirmCloseX" class="changelog-close-x" aria-label="Close modal">&times;</button>
+        <div class="confirm-modal-content">
+          <div class="confirm-modal-icon-ring" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+              <polyline points="15 3 21 3 21 9" />
+              <line x1="10" y1="14" x2="21" y2="3" />
+            </svg>
+          </div>
+          <span class="changelog-badge">EXTERNAL LINK</span>
+          <h3 id="profileConfirmTitle" class="confirm-modal-title">Wanna Visit This Profile?</h3>
+          <p class="confirm-modal-desc">
+            You are about to visit <strong id="confirmUsername">—</strong>'s official <span id="confirmModeName">osu!</span> profile on <span class="confirm-domain">osu.ppy.sh</span>.
+          </p>
 
+          <div class="confirm-modal-actions">
+            <button id="confirmCancelBtn" class="confirm-btn-cancel" type="button">Cancel</button>
+            <button id="confirmVisitBtn" class="confirm-btn-visit" type="button">
+              Visit Profile
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="5" y1="12" x2="19" y2="12" />
+                <polyline points="12 5 19 12 12 19" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Application script -->
     <script src="app.js"></script>
   </body>
 </html>

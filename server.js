@@ -469,13 +469,15 @@ function calculatePerformanceProfile(entries, mode) {
         accuracyValues.push({ value: accuracyRaw, weight: ppWeight });
       }
 
-      // ── Stamina V2 (Per-play raw calculation) ──────────────────────────────
+      // ── Stamina V2 (Candidate D: Hybrid Log-Scaled Tapping Model) ──────────
       if (Number.isFinite(Number(attr.speed_difficulty))) {
         const speedDifficulty = Number(attr.speed_difficulty) || 0;
         const speedNoteCount  = Number(attr.speed_note_count) || 0;
         const hitLength       = Number(beatmap.hit_length) || 0;
-        const staminaQualityPenalty = Math.pow(accuracy, 4) * Math.pow(0.97, misses);
-        const staminaRaw = speedDifficulty * (speedNoteCount / 1000) * (1 - Math.exp(-hitLength / 150)) * staminaQualityPenalty;
+        const noteScale       = Math.log10(1 + speedNoteCount / 150.0);
+        const durationFactor  = 1 - Math.exp(-hitLength / 120.0);
+        const staminaQuality  = Math.pow(accuracy, 3) * Math.pow(0.97, misses);
+        const staminaRaw      = speedDifficulty * (0.50 + noteScale) * durationFactor * staminaQuality;
         staminaRawValues.push(staminaRaw);
       }
     }
@@ -500,7 +502,7 @@ function calculatePerformanceProfile(entries, mode) {
     const SMAX_AIM      = 7.5;
     const SMAX_SPEED    = 4.0;
     const SMAX_ACCURACY = 11.0;
-    const SMAX_STAMINA  = 7.5;
+    const SMAX_STAMINA  = 6.5;
 
     const scaleRating = (raw, smax) => {
       if (raw === null || raw === undefined) return null;
@@ -840,7 +842,7 @@ app.get('/api/user/:username/:mode/performance', async (req, res) => {
   }
 
   const username = rawUsername.trim();
-  const cacheVersion = mode === 'mania' ? 'v23' : 'v21';
+  const cacheVersion = mode === 'mania' ? 'v23' : 'v24';
   const cacheKey = `${username}:${mode}:${cacheVersion}`;
 
   // ── Cache hit ──────────────────────────────────────────────────────────────
