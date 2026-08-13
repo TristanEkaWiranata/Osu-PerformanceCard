@@ -564,24 +564,89 @@ function renderPerformanceProfile(data) {
   }
 
   const m = data.metrics;
-  
-  // Format numeric values
-  perfValAim.textContent      = `${Number(m.aim ?? 0).toFixed(1)} / 10`;
-  perfValSpeed.textContent    = `${Number(m.speed ?? 0).toFixed(1)} / 10`;
-  perfValAccuracy.textContent = `${Number(m.accuracy ?? 0).toFixed(1)} / 10`;
-  perfValStamina.textContent  = `${Number(m.stamina ?? 0).toFixed(1)} / 10`;
+  const isMania = data.mode === 'mania';
 
-  // Update progress bars (normalized against 10)
-  // Ensure we clamp values between 0 and 10 for safe bar widths (0% to 100%)
+  const card1 = document.querySelector('.perf-grid > div:nth-child(1)');
+  const card2 = document.querySelector('.perf-grid > div:nth-child(2)');
+  const card3 = document.querySelector('.perf-grid > div:nth-child(3)');
+  const card4 = document.querySelector('.perf-grid > div:nth-child(4)');
+
   const clampWidth = (val) => Math.max(0, Math.min(100, (Number(val ?? 0) * 10)));
-  
-  // Use timeout to allow transition to trigger smoothly after element display
-  setTimeout(() => {
-    perfBarAim.style.width      = `${clampWidth(m.aim)}%`;
-    perfBarSpeed.style.width    = `${clampWidth(m.speed)}%`;
-    perfBarAccuracy.style.width = `${clampWidth(m.accuracy)}%`;
-    perfBarStamina.style.width  = `${clampWidth(m.stamina)}%`;
-  }, 50);
+
+  if (isMania) {
+    // Mania Layout: SPEED, ACCURACY, STAMINA, LN CONTROL
+    if (card1) {
+      card1.className = 'perf-card perf-card--speed';
+      const nameEl = card1.querySelector('.perf-metric-name');
+      if (nameEl) nameEl.textContent = 'SPEED';
+    }
+    if (card2) {
+      card2.className = 'perf-card perf-card--accuracy';
+      const nameEl = card2.querySelector('.perf-metric-name');
+      if (nameEl) nameEl.textContent = 'ACCURACY';
+    }
+    if (card3) {
+      card3.className = 'perf-card perf-card--stamina';
+      const nameEl = card3.querySelector('.perf-metric-name');
+      if (nameEl) nameEl.textContent = 'STAMINA';
+    }
+    if (card4) {
+      card4.className = 'perf-card perf-card--ln';
+      const nameEl = card4.querySelector('.perf-metric-name');
+      if (nameEl) nameEl.textContent = 'LN CONTROL';
+      const barEl = card4.querySelector('.perf-bar-fill');
+      if (barEl) barEl.className = 'perf-bar-fill perf-bar-fill--ln';
+    }
+
+    perfValAim.textContent      = `${Number(m.speed ?? 0).toFixed(1)} / 10`;
+    perfValSpeed.textContent    = `${Number(m.accuracy ?? 0).toFixed(1)} / 10`;
+    perfValAccuracy.textContent = `${Number(m.stamina ?? 0).toFixed(1)} / 10`;
+    perfValStamina.textContent  = `${Number(m.ln_control ?? 0).toFixed(1)} / 10`;
+
+    setTimeout(() => {
+      perfBarAim.style.width      = `${clampWidth(m.speed)}%`;
+      perfBarSpeed.style.width    = `${clampWidth(m.accuracy)}%`;
+      perfBarAccuracy.style.width = `${clampWidth(m.stamina)}%`;
+      perfBarStamina.style.width  = `${clampWidth(m.ln_control)}%`;
+    }, 50);
+
+  } else {
+    // Standard (osu) Layout: AIM, SPEED, ACCURACY, STAMINA
+    if (card1) {
+      card1.className = 'perf-card perf-card--aim';
+      const nameEl = card1.querySelector('.perf-metric-name');
+      if (nameEl) nameEl.textContent = 'AIM';
+    }
+    if (card2) {
+      card2.className = 'perf-card perf-card--speed';
+      const nameEl = card2.querySelector('.perf-metric-name');
+      if (nameEl) nameEl.textContent = 'SPEED';
+    }
+    if (card3) {
+      card3.className = 'perf-card perf-card--accuracy';
+      const nameEl = card3.querySelector('.perf-metric-name');
+      if (nameEl) nameEl.textContent = 'ACCURACY';
+    }
+    if (card4) {
+      card4.className = 'perf-card perf-card--stamina';
+      const nameEl = card4.querySelector('.perf-metric-name');
+      if (nameEl) nameEl.textContent = 'STAMINA';
+      const barEl = card4.querySelector('.perf-bar-fill');
+      if (barEl) barEl.className = 'perf-bar-fill perf-bar-fill--stamina';
+    }
+
+    perfValAim.textContent      = `${Number(m.aim ?? 0).toFixed(1)} / 10`;
+    perfValSpeed.textContent    = `${Number(m.speed ?? 0).toFixed(1)} / 10`;
+    perfValAccuracy.textContent = `${Number(m.accuracy ?? 0).toFixed(1)} / 10`;
+    perfValStamina.textContent  = `${Number(m.stamina ?? 0).toFixed(1)} / 10`;
+
+    setTimeout(() => {
+      perfBarAim.style.width      = `${clampWidth(m.aim)}%`;
+      perfBarSpeed.style.width    = `${clampWidth(m.speed)}%`;
+      perfBarAccuracy.style.width = `${clampWidth(m.accuracy)}%`;
+      perfBarStamina.style.width  = `${clampWidth(m.stamina)}%`;
+    }, 50);
+  }
 
   // Set sample size text dynamically
   perfSampleSize.textContent = `Based on ${data.sample_size} best plays`;
@@ -598,9 +663,8 @@ async function loadPerformanceProfile(username, mode) {
   lastSearchedUsername = username;
   lastSearchedMode     = mode;
 
-  // For V1, we only calculate performance profiles for Standard (osu) mode.
-  // Gated on frontend to prevent useless API calls.
-  if (mode !== 'osu') {
+  // Mode gating: currently osu (Standard) and mania are supported
+  if (mode !== 'osu' && mode !== 'mania') {
     perfProfileContainer.hidden = true;
     return;
   }
@@ -657,8 +721,48 @@ perfRetryBtn.addEventListener('click', () => {
 //
 
 const CHANGELOG = {
-  currentVersion: 'v1.5.3',
+  currentVersion: 'v1.6.0',
   releases: [
+    {
+      version: 'v1.6.0',
+      date: 'August 13, 2026',
+      title: 'osu!mania Performance Calibration',
+      sections: [
+        {
+          type: 'new',
+          title: '✨ osu!mania Performance Calibration',
+          items: [
+            { desc: 'Improved osu!mania Performance Profile calculations to better represent demonstrated player skill.' },
+            { desc: 'Reworked miss penalties to account for the percentage of missed objects rather than absolute miss count.' },
+            { desc: 'Miss impact is now normalized against the number of playable objects in each Mania map.' },
+            { desc: 'High-difficulty players are now better represented even when their maps contain a relatively high number of misses.' },
+            { desc: 'Clean execution and timing precision remain important and continue to influence the final ratings.' },
+            { desc: 'Improved differentiation between Speed, Accuracy, Stamina, and LN Control specialists.' },
+            { desc: 'Recalibrated the Mania skill rating scale to prevent excessive penalties from long or high-object-count maps.' }
+          ]
+        },
+        {
+          type: 'improved',
+          title: '⚡ Performance & Reliability',
+          items: [
+            { desc: 'Improved consistency of Performance Profile results across different Mania map lengths.' },
+            { desc: 'Improved the distinction between map difficulty and execution quality.' },
+            { desc: 'Updated Mania performance caching for the new calculation model.' },
+            { desc: 'osu! Standard performance calculations remain unchanged.' }
+          ]
+        },
+        {
+          type: 'fixed',
+          title: '🐛 Calibration Fixes',
+          items: [
+            { desc: 'Fixed excessive skill suppression caused by treating every miss as an independent absolute penalty.' },
+            { desc: 'Fixed cases where players with significantly harder Mania scores could receive unexpectedly lower skill ratings than players on easier maps.' },
+            { desc: 'Improved calibration between high-difficulty/high-miss performances and clean high-accuracy performances.' },
+            { desc: 'Improved LN Control calibration for players with strong Long Note performance.' }
+          ]
+        }
+      ]
+    },
     {
       version: 'v1.5.3',
       date: 'August 13, 2026',

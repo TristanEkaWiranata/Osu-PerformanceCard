@@ -516,7 +516,131 @@ function calculatePerformanceProfile(entries, mode) {
     };
   }
 
-  // Other modes will be implemented after Standard works.
+  // ── osu!mania ─────────────────────────────────────────────────────────────
+  if (mode === 'mania') {
+    const speedValues = [];
+    const accuracyValues = [];
+    const staminaRawValues = [];
+    const lnRawValues = [];
+    let lnHeavyCount = 0;
+
+    for (const entry of entries) {
+      const score = entry.score;
+      const beatmap = entry.beatmap;
+      const attr = entry.attributes;
+
+      const ppWeight = Number(score.pp) > 0 ? Number(score.pp) : 1;
+      const accuracy = Number(score.accuracy) || 0; // decimal 0.0 to 1.0
+      const misses   = Number(score.statistics?.count_miss) || 0;
+      const starRating = Number(attr.star_rating) || Number(beatmap.difficulty_rating) || 0;
+
+      const mods = Array.isArray(score.mods)
+        ? score.mods.map(m => (typeof m === 'string' ? m : m.acronym))
+        : [];
+
+      const isDT = mods.includes('DT') || mods.includes('NC');
+      const isHT = mods.includes('HT');
+
+      const baseHitLen = Number(beatmap.hit_length) || Number(beatmap.total_length) || 1;
+      const effHitLen  = isDT ? baseHitLen / 1.5 : isHT ? baseHitLen / 0.75 : baseHitLen;
+
+      const circles = Number(beatmap.count_circles) || 0;
+      const sliders = Number(beatmap.count_sliders) || 0;
+      const totalObjects = circles + sliders;
+
+      // Skip plays where object count cannot be determined (avoids division by zero).
+      if (totalObjects <= 0) continue;
+
+      const noteDensity = totalObjects / Math.max(1, effHitLen);
+      const lnRatio = sliders / totalObjects;
+
+      if (lnRatio >= 0.30) {
+        lnHeavyCount++;
+      }
+
+      // ── Model D2: Normalized miss penalty ─────────────────────────────────
+      // miss_rate = count_miss / (count_circles + count_sliders)
+      // speed_miss_penalty     = exp(-8  × miss_rate)   [more tolerant]
+      // acc/stam/ln_miss_penalty = exp(-15 × miss_rate)  [precision-sensitive]
+      const missRate          = misses / totalObjects;
+      const speedMissPenalty  = Math.exp(-8  * missRate);
+      const qualMissPenalty   = Math.exp(-15 * missRate);
+
+      // 1. SPEED (Per-play)
+      const speedRaw = starRating * (1 + noteDensity / 25.0) * accuracy * speedMissPenalty;
+      speedValues.push({ value: speedRaw, weight: ppWeight });
+
+      // 2. ACCURACY (Per-play)
+      const countGeki = Number(score.statistics?.count_geki) || 0;
+      const count300  = Number(score.statistics?.count_300) || 0;
+      const countKatu = Number(score.statistics?.count_katu) || 0; // 200/100g
+      const count100  = Number(score.statistics?.count_100) || 0;
+      const count50   = Number(score.statistics?.count_50) || 0;
+      const timingDenom = countGeki + count300 + countKatu + count100 + count50;
+
+      if (timingDenom > 0) {
+        const maxRatio = countGeki / timingDenom;
+        const accuracyBase = 0.65 * maxRatio + 0.35 * accuracy;
+        const difficultyFactor = 0.85 + 0.15 * Math.min(10, starRating) / 10;
+        const accuracyRaw = accuracyBase * difficultyFactor * qualMissPenalty;
+        accuracyValues.push({ value: accuracyRaw, weight: ppWeight });
+      }
+
+      // 3. STAMINA (Per-play)
+      const durationFactor = 1 - Math.exp(-effHitLen / 120.0);
+      const staminaRaw = noteDensity * durationFactor * Math.min(10, starRating) * Math.pow(accuracy, 2) * qualMissPenalty;
+      staminaRawValues.push(staminaRaw);
+
+      // 4. LN CONTROL (Per-play)
+      const lnRaw = lnRatio * Math.min(10, starRating) * Math.pow(accuracy, 2) * qualMissPenalty;
+      lnRawValues.push(lnRaw);
+    }
+
+    const speedRawAvg = weightedAverage(speedValues);
+    const accuracyRawAvg = weightedAverage(accuracyValues);
+
+    // Top 5 Stamina Aggregation
+    staminaRawValues.sort((a, b) => b - a);
+    const top5Stamina = staminaRawValues.slice(0, 5);
+    let stamSum = 0, stamW = 0;
+    top5Stamina.forEach((val, j) => {
+      const w = Math.pow(0.90, j);
+      stamSum += val * w;
+      stamW += w;
+    });
+    const staminaRawWeighted = stamW > 0 ? stamSum / stamW : 0;
+
+    // Top 5 LN Aggregation & Exposure Confidence
+    lnRawValues.sort((a, b) => b - a);
+    const top5LN = lnRawValues.slice(0, 5);
+    let lnSum = 0, lnW = 0;
+    top5LN.forEach((val, j) => {
+      const w = Math.pow(0.90, j);
+      lnSum += val * w;
+      lnW += w;
+    });
+    const lnRawWeighted = lnW > 0 ? lnSum / lnW : 0;
+    const confidenceLN = Math.min(1.0, lnHeavyCount / 5.0);
+
+    const scaleRating = (raw, smax, exp = 0.8) => {
+      if (raw === null || raw === undefined) return null;
+      const val = clamp(10 * Math.pow(raw / smax, exp), 0, 10);
+      return Number(val.toFixed(1));
+    };
+
+    // ── Model D2 Smax constants (recalibrated alongside normalized miss penalty)
+    const rawLNRating = scaleRating(lnRawWeighted, 6.0, 0.8) ?? 0;
+    const finalLNRating = Number(clamp(rawLNRating * confidenceLN, 0, 10).toFixed(1));
+
+    return {
+      speed: scaleRating(speedRawAvg, 22.0, 0.8),
+      accuracy: scaleRating(accuracyRawAvg, 0.80, 0.8),
+      stamina: scaleRating(staminaRawWeighted, 260.0, 0.8),
+      ln_control: finalLNRating,
+    };
+  }
+
+  // Other modes will be implemented after Standard and Mania work.
   return null;
 }
 
@@ -699,11 +823,11 @@ app.get('/api/user/:username/:mode/performance', async (req, res) => {
     });
   }
 
-  // Only osu standard is implemented for V1
-  if (mode !== 'osu') {
+  // Only osu standard and mania are implemented
+  if (mode !== 'osu' && mode !== 'mania') {
     return res.status(501).json({
       error: 'MODE_NOT_IMPLEMENTED',
-      message: `Performance profile for "${mode}" mode is not yet implemented. Only "osu" (osu! Standard) is currently supported.`,
+      message: `Performance profile for "${mode}" mode is not yet implemented. Only "osu" (osu! Standard) and "mania" (osu!mania) are currently supported.`,
     });
   }
 
@@ -716,7 +840,8 @@ app.get('/api/user/:username/:mode/performance', async (req, res) => {
   }
 
   const username = rawUsername.trim();
-  const cacheKey = `${username}:${mode}:v21`;
+  const cacheVersion = mode === 'mania' ? 'v23' : 'v21';
+  const cacheKey = `${username}:${mode}:${cacheVersion}`;
 
   // ── Cache hit ──────────────────────────────────────────────────────────────
   const hit = perfCacheGet(cacheKey);
