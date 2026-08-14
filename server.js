@@ -409,8 +409,10 @@ function getAdjustedOD(baseOD, mods) {
   return od;
 }
 
-// ─── CTB Raw Beatmap Helper & Cache ──────────────────────────────────────────
-const rawOsuCache = new Map(); // beatmapId -> { vP95, hyperdashRatio }
+// ─── In-Memory Caches & Request Deduplication ──────────────────────────────
+const attrCache = new Map();       // `${beatmapId}_${mode}_${sortedMods}` -> attributes object
+const rawOsuCache = new Map();     // beatmapId -> { vP95, hyperdashRatio }
+const inFlightRequests = new Map(); // key -> Promise
 
 function parseOsuHitObjects(text) {
   const lines = text.split('\n');
@@ -447,41 +449,53 @@ async function getRawOsuMovementFeatures(beatmapId, cs = 5.0) {
     return rawOsuCache.get(beatmapId);
   }
 
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 2500); // 2.5s safety timeout
-
-    const res = await fetch(`https://osu.ppy.sh/osu/${beatmapId}`, { signal: controller.signal });
-    clearTimeout(timeoutId);
-
-    if (!res.ok) return null;
-    const text = await res.text();
-    const objs = parseOsuHitObjects(text);
-    if (objs.length < 2) return null;
-
-    const halfWidth = getCatcherHalfWidth(cs);
-    const vels = [];
-    let hyperdashCount = 0;
-
-    for (let i = 1; i < objs.length; i++) {
-      const dt = Math.max(1, objs[i].time - objs[i-1].time);
-      const dx = Math.abs(objs[i].x - objs[i-1].x);
-      const effDist = Math.max(0, dx - halfWidth);
-      const vReq = effDist / dt;
-
-      vels.push(vReq);
-      if (vReq > 1.50) hyperdashCount++;
-    }
-
-    const vP95 = percentiles(vels).p95;
-    const hyperdashRatio = hyperdashCount / Math.max(1, objs.length - 1);
-
-    const feat = { vP95, hyperdashRatio };
-    rawOsuCache.set(beatmapId, feat);
-    return feat;
-  } catch {
-    return null; // Graceful fallback on network error/timeout
+  const inflightKey = `raw_osu_${beatmapId}`;
+  if (inFlightRequests.has(inflightKey)) {
+    return inFlightRequests.get(inflightKey);
   }
+
+  const fetchPromise = (async () => {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 2500); // 2.5s safety timeout
+
+      const res = await fetch(`https://osu.ppy.sh/osu/${beatmapId}`, { signal: controller.signal });
+      clearTimeout(timeoutId);
+
+      if (!res.ok) return null;
+      const text = await res.text();
+      const objs = parseOsuHitObjects(text);
+      if (objs.length < 2) return null;
+
+      const halfWidth = getCatcherHalfWidth(cs);
+      const vels = [];
+      let hyperdashCount = 0;
+
+      for (let i = 1; i < objs.length; i++) {
+        const dt = Math.max(1, objs[i].time - objs[i-1].time);
+        const dx = Math.abs(objs[i].x - objs[i-1].x);
+        const effDist = Math.max(0, dx - halfWidth);
+        const vReq = effDist / dt;
+
+        vels.push(vReq);
+        if (vReq > 1.50) hyperdashCount++;
+      }
+
+      const vP95 = percentiles(vels).p95;
+      const hyperdashRatio = hyperdashCount / Math.max(1, objs.length - 1);
+
+      const feat = { vP95, hyperdashRatio };
+      rawOsuCache.set(beatmapId, feat);
+      return feat;
+    } catch {
+      return null; // Graceful fallback on network error/timeout
+    } finally {
+      inFlightRequests.delete(inflightKey);
+    }
+  })();
+
+  inFlightRequests.set(inflightKey, fetchPromise);
+  return fetchPromise;
 }
 
 // ─── Taiko Raw Beatmap Helper & Cache ────────────────────────────────────────
@@ -522,125 +536,180 @@ async function getRawOsuTaikoFeatures(beatmapId, rate = 1.0) {
     return rawTaikoCache.get(cacheKey);
   }
 
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 2500); // 2.5s safety timeout
-
-    const res = await fetch(`https://osu.ppy.sh/osu/${beatmapId}`, { signal: controller.signal });
-    clearTimeout(timeoutId);
-
-    if (!res.ok) return null;
-    const text = await res.text();
-    const objs = parseTaikoHitObjects(text);
-    const circles = objs.filter(o => o.isCircle);
-    if (circles.length < 5) return null;
-
-    const n = circles.length;
-    const intervals = [];
-    const fastIntervals = [];
-    let fastColorSwitches = 0;
-
-    const fourGrams = {};
-    let fourGramTotal = 0;
-    let complexPatternCount = 0;
-
-    const STREAM_THR = 130;
-    const streams = [];
-    let curStreamLen = 1;
-    let curStreamDur = 0;
-    let totalStreamDurMs = 0;
-    let longestStreamMs = 0;
-    let rhythmTransitions = 0;
-
-    // Apply rate modifier to timestamps
-    const times = circles.map(c => c.time / rate);
-
-    for (let i = 1; i < n; i++) {
-      const dt = Math.max(1, times[i] - times[i-1]);
-      intervals.push(dt);
-
-      const isSwitch = circles[i].color !== circles[i-1].color;
-
-      if (dt <= STREAM_THR) {
-        if (isSwitch) fastColorSwitches++;
-        fastIntervals.push(dt);
-        curStreamLen++;
-        curStreamDur += dt;
-
-        if (i >= 3) {
-          const p4 = `${circles[i-3].color[0]}${circles[i-2].color[0]}${circles[i-1].color[0]}${circles[i].color[0]}`;
-          fourGrams[p4] = (fourGrams[p4] || 0) + 1;
-          fourGramTotal++;
-          if (p4 !== 'dddd' && p4 !== 'kkkk' && p4 !== 'dkdk' && p4 !== 'kdkd') {
-            complexPatternCount++;
-          }
-        }
-      } else {
-        if (curStreamLen >= 4) {
-          streams.push({ len: curStreamLen, duration: curStreamDur });
-          totalStreamDurMs += curStreamDur;
-          if (curStreamDur > longestStreamMs) longestStreamMs = curStreamDur;
-        }
-        curStreamLen = 1;
-        curStreamDur = 0;
-      }
-
-      if (i >= 2) {
-        const prevDt = Math.max(1, times[i-1] - times[i-2]);
-        const ratio = dt / prevDt;
-        if (ratio < 0.85 || ratio > 1.18) rhythmTransitions++;
-      }
-    }
-
-    if (curStreamLen >= 4) {
-      streams.push({ len: curStreamLen, duration: curStreamDur });
-      totalStreamDurMs += curStreamDur;
-      if (curStreamDur > longestStreamMs) longestStreamMs = curStreamDur;
-    }
-
-    const sortedInt = [...intervals].sort((a, b) => a - b);
-    const p05Int = sortedInt[Math.floor(0.05 * sortedInt.length)] || 100;
-    const p95Freq = 1000 / Math.max(1, p05Int);
-    const fastIntervalRatio = fastIntervals.length / Math.max(1, intervals.length);
-
-    let sumInt = 0;
-    for (const v of intervals) sumInt += v;
-    const meanInt = sumInt / intervals.length;
-
-    let varInt = 0;
-    for (const v of intervals) varInt += Math.pow(v - meanInt, 2);
-    const stdInt = Math.sqrt(varInt / intervals.length);
-    const intervalCV = stdInt / Math.max(1, meanInt);
-    const rhythmTransitionRate = rhythmTransitions / Math.max(1, n - 2);
-
-    let h4 = 0;
-    if (fourGramTotal > 0) {
-      for (const pat in fourGrams) {
-        const pr = fourGrams[pat] / fourGramTotal;
-        if (pr > 0) h4 -= pr * Math.log2(pr);
-      }
-    }
-    const normH4 = h4 / 4.0; // log2(16) = 4.0
-    const complexPatternRatio = fourGramTotal > 0 ? complexPatternCount / fourGramTotal : 0;
-    const fastSwitchRate = fastColorSwitches / Math.max(1, fastIntervals.length);
-
-    const feat = {
-      rhythmTransitionRate,
-      intervalCV,
-      p95Freq,
-      fastIntervalRatio,
-      totalStreamSec: totalStreamDurMs / 1000,
-      longestStreamSec: longestStreamMs / 1000,
-      fastSwitchRate,
-      complexPatternRatio,
-      normH4,
-    };
-
-    rawTaikoCache.set(cacheKey, feat);
-    return feat;
-  } catch {
-    return null; // Graceful fallback on network error/timeout
+  const inflightKey = `raw_taiko_${cacheKey}`;
+  if (inFlightRequests.has(inflightKey)) {
+    return inFlightRequests.get(inflightKey);
   }
+
+  const fetchPromise = (async () => {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 2500); // 2.5s safety timeout
+
+      const res = await fetch(`https://osu.ppy.sh/osu/${beatmapId}`, { signal: controller.signal });
+      clearTimeout(timeoutId);
+
+      if (!res.ok) return null;
+      const text = await res.text();
+      const objs = parseTaikoHitObjects(text);
+      const circles = objs.filter(o => o.isCircle);
+      if (circles.length < 5) return null;
+
+      const n = circles.length;
+      const intervals = [];
+      const fastIntervals = [];
+      let fastColorSwitches = 0;
+
+      const fourGrams = {};
+      let fourGramTotal = 0;
+      let complexPatternCount = 0;
+
+      const STREAM_THR = 130;
+      const streams = [];
+      let curStreamLen = 1;
+      let curStreamDur = 0;
+      let totalStreamDurMs = 0;
+      let longestStreamMs = 0;
+      let rhythmTransitions = 0;
+
+      // Apply rate modifier to timestamps
+      const times = circles.map(c => c.time / rate);
+
+      for (let i = 1; i < n; i++) {
+        const dt = Math.max(1, times[i] - times[i-1]);
+        intervals.push(dt);
+
+        const isSwitch = circles[i].color !== circles[i-1].color;
+
+        if (dt <= STREAM_THR) {
+          if (isSwitch) fastColorSwitches++;
+          fastIntervals.push(dt);
+          curStreamLen++;
+          curStreamDur += dt;
+
+          if (i >= 3) {
+            const p4 = `${circles[i-3].color[0]}${circles[i-2].color[0]}${circles[i-1].color[0]}${circles[i].color[0]}`;
+            fourGrams[p4] = (fourGrams[p4] || 0) + 1;
+            fourGramTotal++;
+            if (p4 !== 'dddd' && p4 !== 'kkkk' && p4 !== 'dkdk' && p4 !== 'kdkd') {
+              complexPatternCount++;
+            }
+          }
+        } else {
+          if (curStreamLen >= 4) {
+            streams.push({ len: curStreamLen, duration: curStreamDur });
+            totalStreamDurMs += curStreamDur;
+            if (curStreamDur > longestStreamMs) longestStreamMs = curStreamDur;
+          }
+          curStreamLen = 1;
+          curStreamDur = 0;
+        }
+
+        if (i >= 2) {
+          const prevDt = Math.max(1, times[i-1] - times[i-2]);
+          const ratio = dt / prevDt;
+          if (ratio < 0.85 || ratio > 1.18) rhythmTransitions++;
+        }
+      }
+
+      if (curStreamLen >= 4) {
+        streams.push({ len: curStreamLen, duration: curStreamDur });
+        totalStreamDurMs += curStreamDur;
+        if (curStreamDur > longestStreamMs) longestStreamMs = curStreamDur;
+      }
+
+      const sortedInt = [...intervals].sort((a, b) => a - b);
+      const p05Int = sortedInt[Math.floor(0.05 * sortedInt.length)] || 100;
+      const p95Freq = 1000 / Math.max(1, p05Int);
+      const fastIntervalRatio = fastIntervals.length / Math.max(1, intervals.length);
+
+      let sumInt = 0;
+      for (const v of intervals) sumInt += v;
+      const meanInt = sumInt / intervals.length;
+
+      let varInt = 0;
+      for (const v of intervals) varInt += Math.pow(v - meanInt, 2);
+      const stdInt = Math.sqrt(varInt / intervals.length);
+      const intervalCV = stdInt / Math.max(1, meanInt);
+      const rhythmTransitionRate = rhythmTransitions / Math.max(1, n - 2);
+
+      let h4 = 0;
+      if (fourGramTotal > 0) {
+        for (const pat in fourGrams) {
+          const pr = fourGrams[pat] / fourGramTotal;
+          if (pr > 0) h4 -= pr * Math.log2(pr);
+        }
+      }
+      const normH4 = h4 / 4.0; // log2(16) = 4.0
+      const complexPatternRatio = fourGramTotal > 0 ? complexPatternCount / fourGramTotal : 0;
+      const fastSwitchRate = fastColorSwitches / Math.max(1, fastIntervals.length);
+
+      const feat = {
+        rhythmTransitionRate,
+        intervalCV,
+        p95Freq,
+        fastIntervalRatio,
+        totalStreamSec: totalStreamDurMs / 1000,
+        longestStreamSec: longestStreamMs / 1000,
+        fastSwitchRate,
+        complexPatternRatio,
+        normH4,
+      };
+
+      rawTaikoCache.set(cacheKey, feat);
+      return feat;
+    } catch {
+      return null; // Graceful fallback on network error/timeout
+    } finally {
+      inFlightRequests.delete(inflightKey);
+    }
+  })();
+
+  inFlightRequests.set(inflightKey, fetchPromise);
+  return fetchPromise;
+}
+
+// ─── Beatmap Difficulty Attributes Fetcher with Cache & Deduplication ─────────
+async function fetchBeatmapAttributes(beatmapId, mode, mods, token) {
+  const modStr = (mods || [])
+    .map(m => (typeof m === 'string' ? m : m.acronym))
+    .sort()
+    .join(',');
+  const cacheKey = `${beatmapId}_${mode}_${modStr}`;
+  if (attrCache.has(cacheKey)) {
+    return attrCache.get(cacheKey);
+  }
+
+  const inflightKey = `attr_${cacheKey}`;
+  if (inFlightRequests.has(inflightKey)) {
+    return inFlightRequests.get(inflightKey);
+  }
+
+  const fetchPromise = (async () => {
+    try {
+      const res = await fetch(`${OSU_API_BASE}/beatmaps/${beatmapId}/attributes`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ ruleset: mode, mods: mods || [] }),
+      });
+      if (!res.ok) return null;
+      const data = await res.json();
+      const attributes = data.attributes || {};
+      attrCache.set(cacheKey, attributes);
+      return attributes;
+    } catch {
+      return null;
+    } finally {
+      inFlightRequests.delete(inflightKey);
+    }
+  })();
+
+  inFlightRequests.set(inflightKey, fetchPromise);
+  return fetchPromise;
 }
 
 /**
@@ -1060,15 +1129,28 @@ function calculatePerformanceProfile(entries, mode) {
   return null;
 }
 
-// ─── Performance Profile Cache ────────────────────────────────────────────────
+// ─── Performance Profile Cache & Pipeline Parameters ─────────────────────────
 //
-// In-memory cache keyed by "username:mode".
+// In-memory cache keyed by "username:mode:version".
 // Only derived performance data is stored — no tokens or credentials.
 //
-const PERF_CACHE_TTL_MS       = 10 * 60 * 1000; // 10 minutes
-const PERFORMANCE_SCORE_LIMIT = 20;
-const MIN_VALID_SCORES        = 3;
+const PERF_CACHE_TTL_MS     = 10 * 60 * 1000; // 10 minutes
+const CANDIDATE_LIMIT       = 100;            // Candidate pool size from osu! API
+const BATCH_SIZE            = 4;              // Bounded concurrency per batch
+const BATCH_DELAY_MS        = 40;             // Delay between network-heavy batches (ms)
+const MIN_VALID_SCORES      = 3;              // Minimum valid plays required to compute profile
 
+// Adaptive deep-analysis limit per ruleset (uncached network target)
+const DEEP_ANALYSIS_LIMIT_BY_MODE = {
+  osu:    40, // Standard: attributes only (pure JSON, fast)
+  mania:  40, // Mania: attributes only (pure JSON, fast)
+  fruits: 30, // Catch: attributes + raw .osu geometry
+  taiko:  30, // Taiko: attributes + raw .osu hit-object patterns
+};
+
+function getDeepAnalysisLimit(mode) {
+  return DEEP_ANALYSIS_LIMIT_BY_MODE[mode] ?? 30;
+}
 
 const perfCache    = new Map(); // key → { result, expiresAt }
 const perfInflight = new Map(); // key → Promise  (request deduplication)
@@ -1082,6 +1164,76 @@ function perfCacheGet(key) {
 
 function perfCacheSet(key, result) {
   perfCache.set(key, { result, expiresAt: Date.now() + PERF_CACHE_TTL_MS });
+}
+
+/**
+ * Deterministic candidate triage:
+ * Selects up to deepLimit uncached plays prioritizing top PP,
+ * difficulty relevance, and beatmap uniqueness, while including all already-cached
+ * candidate plays at zero network cost.
+ */
+function triageCandidates(scores, mode) {
+  const deepLimit = getDeepAnalysisLimit(mode);
+  if (!Array.isArray(scores) || scores.length <= deepLimit) {
+    return scores || [];
+  }
+
+  const fullyCached = [];
+  const uncached = [];
+
+  for (const s of scores) {
+    const bId = s.beatmap?.id ?? s.beatmap_id;
+    const mods = Array.isArray(s.mods)
+      ? s.mods.map(m => (typeof m === 'string' ? m : m.acronym))
+      : [];
+    const modStr = mods.sort().join(',');
+    const attrKey = `${bId}_${mode}_${modStr}`;
+    const isAttrCached = attrCache.has(attrKey);
+
+    let isRawCached = true;
+    if (mode === 'fruits') {
+      isRawCached = rawOsuCache.has(bId);
+    } else if (mode === 'taiko') {
+      const isDT = mods.includes('DT') || mods.includes('NC');
+      const isHT = mods.includes('HT');
+      const rate = isDT ? 1.5 : isHT ? 0.75 : 1.0;
+      isRawCached = rawTaikoCache.has(`${bId}_rate${rate}`);
+    }
+
+    if (isAttrCached && isRawCached) {
+      fullyCached.push(s);
+    } else {
+      uncached.push(s);
+    }
+  }
+
+  // Triage Strategy: Top 20 PP with unique beatmaps + highest SR from remainder
+  const selectedUncached = [];
+  const seenMapIds = new Set();
+
+  // Primary: Top PP plays
+  for (const s of uncached) {
+    const bId = s.beatmap?.id ?? s.beatmap_id;
+    if (!seenMapIds.has(bId)) {
+      seenMapIds.add(bId);
+      selectedUncached.push(s);
+      if (selectedUncached.length >= 20) break;
+    }
+  }
+
+  // Secondary: Highest difficulty rating from remaining uncached
+  const remainderUncached = uncached.filter(s => !selectedUncached.includes(s));
+  remainderUncached.sort(
+    (a, b) => (Number(b.beatmap?.difficulty_rating) || 0) - (Number(a.beatmap?.difficulty_rating) || 0)
+  );
+
+  for (const s of remainderUncached) {
+    if (selectedUncached.length >= deepLimit) break;
+    selectedUncached.push(s);
+  }
+
+  // Combine all fully cached candidates + selected uncached candidates
+  return Array.from(new Set([...fullyCached, ...selectedUncached]));
 }
 
 // ─── Core Computation ────────────────────────────────────────────────────────
@@ -1140,10 +1292,10 @@ async function computePerformanceProfile(username, mode) {
     });
   }
 
-  // 2. Fetch best scores
+  // 2. Fetch candidate pool (up to 100 best scores)
   const scoresUrl = new URL(`${OSU_API_BASE}/users/${user.id}/scores/best`);
   scoresUrl.searchParams.set('mode', mode);
-  scoresUrl.searchParams.set('limit', String(PERFORMANCE_SCORE_LIMIT));
+  scoresUrl.searchParams.set('limit', String(CANDIDATE_LIMIT));
   scoresUrl.searchParams.set('offset', '0');
   scoresUrl.searchParams.set('legacy_only', '0');
 
@@ -1157,80 +1309,94 @@ async function computePerformanceProfile(username, mode) {
 
   const scores = await scoresRes.json();
   if (!Array.isArray(scores) || scores.length === 0) {
-    return { mode, sample_size: 0, cached: false, metrics: null,
-      message: 'No best scores available for this player.' };
+    return {
+      mode,
+      candidate_count: 0,
+      sample_size: 0,
+      cached: false,
+      metrics: null,
+      message: 'No best scores available for this player.',
+    };
   }
 
-  // 3. Fetch difficulty attributes (all in parallel; failures are skipped)
-  const analyzed = await Promise.all(
-    scores.map(async (score) => {
-      const beatmapId = score.beatmap?.id ?? score.beatmap_id;
-      if (!beatmapId) return null;
-      try {
-        const attrRes = await fetch(
-          `${OSU_API_BASE}/beatmaps/${beatmapId}/attributes`,
-          {
-            method: 'POST',
-            headers,
-            body: JSON.stringify({ ruleset: mode, mods: score.mods || [] }),
-          }
-        );
-        if (!attrRes.ok) return null;
-        const attrData = await attrRes.json();
-        return { score, beatmap: score.beatmap || {}, attributes: attrData.attributes || {}, rawMovementFeatures: null, rawTaikoFeatures: null };
-      } catch { return null; }
-    })
-  );
+  // 3. Triage candidate plays for deep analysis
+  const candidatesToAnalyze = triageCandidates(scores, mode);
+
+  // 4. Perform bounded deep analysis in controlled batches
+  const analyzed = [];
+  for (let i = 0; i < candidatesToAnalyze.length; i += BATCH_SIZE) {
+    const batch = candidatesToAnalyze.slice(i, i + BATCH_SIZE);
+    let hadNetworkFetch = false;
+
+    const batchResults = await Promise.all(
+      batch.map(async (score) => {
+        const beatmapId = score.beatmap?.id ?? score.beatmap_id;
+        if (!beatmapId) return null;
+
+        const mods = Array.isArray(score.mods)
+          ? score.mods.map(m => (typeof m === 'string' ? m : m.acronym))
+          : [];
+        const modStr = mods.sort().join(',');
+        const attrKey = `${beatmapId}_${mode}_${modStr}`;
+
+        if (!attrCache.has(attrKey)) hadNetworkFetch = true;
+
+        const attr = await fetchBeatmapAttributes(beatmapId, mode, score.mods || [], token);
+        let rawMovementFeatures = null;
+        let rawTaikoFeatures = null;
+
+        if (mode === 'fruits') {
+          if (!rawOsuCache.has(beatmapId)) hadNetworkFetch = true;
+          const cs = Number(score.beatmap?.cs) || 5.0;
+          rawMovementFeatures = await getRawOsuMovementFeatures(beatmapId, cs);
+        } else if (mode === 'taiko') {
+          const isDT = mods.includes('DT') || mods.includes('NC');
+          const isHT = mods.includes('HT');
+          const rate = isDT ? 1.5 : isHT ? 0.75 : 1.0;
+          if (!rawTaikoCache.has(`${beatmapId}_rate${rate}`)) hadNetworkFetch = true;
+          rawTaikoFeatures = await getRawOsuTaikoFeatures(beatmapId, rate);
+        }
+
+        return {
+          score,
+          beatmap: score.beatmap || {},
+          attributes: attr || {},
+          rawMovementFeatures,
+          rawTaikoFeatures,
+        };
+      })
+    );
+
+    analyzed.push(...batchResults);
+
+    // Apply brief pacing delay if any network request was issued in this batch
+    if (hadNetworkFetch && i + BATCH_SIZE < candidatesToAnalyze.length) {
+      await new Promise(r => setTimeout(r, BATCH_DELAY_MS));
+    }
+  }
 
   const validScores = analyzed.filter(Boolean);
 
   if (validScores.length < MIN_VALID_SCORES) {
-    return { mode, sample_size: validScores.length, cached: false, metrics: null,
-      message: 'Not enough score data to calculate a reliable performance profile.' };
+    return {
+      mode,
+      candidate_count: scores.length,
+      sample_size: validScores.length,
+      cached: false,
+      metrics: null,
+      message: 'Not enough score data to calculate a reliable performance profile.',
+    };
   }
 
-  // If fruits mode, fetch raw .osu movement features in batches of 4 to prevent 429 rate limits
-  if (mode === 'fruits') {
-    const BATCH_SIZE = 4;
-    for (let i = 0; i < validScores.length; i += BATCH_SIZE) {
-      const batch = validScores.slice(i, i + BATCH_SIZE);
-      await Promise.all(batch.map(async (entry) => {
-        const beatmapId = entry.score.beatmap?.id ?? entry.score.beatmap_id;
-        if (!beatmapId) return;
-        const cs = Number(entry.beatmap?.cs) || 5.0;
-        entry.rawMovementFeatures = await getRawOsuMovementFeatures(beatmapId, cs);
-      }));
-      if (i + BATCH_SIZE < validScores.length) {
-        await new Promise(r => setTimeout(r, 60)); // 60ms batch delay
-      }
-    }
-  }
-
-  // If taiko mode, fetch raw .osu taiko features in batches of 4 to prevent 429 rate limits
-  if (mode === 'taiko') {
-    const BATCH_SIZE = 4;
-    for (let i = 0; i < validScores.length; i += BATCH_SIZE) {
-      const batch = validScores.slice(i, i + BATCH_SIZE);
-      await Promise.all(batch.map(async (entry) => {
-        const beatmapId = entry.score.beatmap?.id ?? entry.score.beatmap_id;
-        if (!beatmapId) return;
-        const mods = Array.isArray(entry.score.mods)
-          ? entry.score.mods.map(m => (typeof m === 'string' ? m : m.acronym))
-          : [];
-        const isDT = mods.includes('DT') || mods.includes('NC');
-        const isHT = mods.includes('HT');
-        const rate = isDT ? 1.5 : isHT ? 0.75 : 1.0;
-        entry.rawTaikoFeatures = await getRawOsuTaikoFeatures(beatmapId, rate);
-      }));
-      if (i + BATCH_SIZE < validScores.length) {
-        await new Promise(r => setTimeout(r, 60)); // 60ms batch delay
-      }
-    }
-  }
-
-  // 4. Derive BeatCard metrics
+  // 5. Derive BeatCard metrics
   const metrics = calculatePerformanceProfile(validScores, mode);
-  return { mode, sample_size: validScores.length, cached: false, metrics };
+  return {
+    mode,
+    candidate_count: scores.length,
+    sample_size: validScores.length,
+    cached: false,
+    metrics,
+  };
 }
 
 /**
@@ -1295,7 +1461,7 @@ app.get('/api/user/:username/:mode/performance', async (req, res) => {
   }
 
   const username = rawUsername.trim();
-  const cacheVersion = mode === 'mania' ? 'v23' : mode === 'fruits' ? 'v1_fruits' : mode === 'taiko' ? 'v1_taiko' : 'v24';
+  const cacheVersion = `v2_pool_${mode}`;
   const cacheKey = `${username}:${mode}:${cacheVersion}`;
 
   // ── Cache hit ──────────────────────────────────────────────────────────────

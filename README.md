@@ -6,7 +6,7 @@
 
 [![Node.js Version](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen.svg)](https://nodejs.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-v1.8.0-blue.svg)](public/app.js)
+[![Version](https://img.shields.io/badge/version-v1.9-blue.svg)](public/app.js)
 [![osu! API v2](https://img.shields.io/badge/osu!%20API-v2-ff66aa.svg)](https://osu.ppy.sh/docs)
 
 *BeatCard is a web application that generates aesthetic player cards and skill performance profiles for osu! players using official osu! API v2 data.*
@@ -19,7 +19,7 @@
 
 **BeatCard** allows users to search for any osu! player by username across multiple game modes and instantly generate:
 1. **Player Overview Card**: Displays player statistics, global/country rank, total PP, play count, hit accuracy, level progress, and playstyle attributes.
-2. **Performance Profile**: A multi-dimensional skill breakdown derived from the player's top 20 best plays.
+2. **Performance Profile**: A multi-dimensional skill breakdown derived from up to 100 candidate best plays with adaptive deep analysis and cache-first ingestion.
 
 All skill ratings are scaled from **0.0 to 10.0** using top-5 weighted decay aggregation ($0.90^j$) and calibrated against top global players.
 
@@ -43,7 +43,7 @@ All skill ratings are scaled from **0.0 to 10.0** using top-5 weighted decay agg
 - 💾 **Saved Cards Gallery**: Save favorite player cards locally to compare profiles anytime.
 - 📸 **High-Resolution PNG Export**: One-click card export to PNG image powered by `html2canvas`.
 - 🔗 **View Profile Link**: Instant one-click link to the player's official osu! user page for the selected game mode.
-- 📜 **What's New / Changes Log Modal**: Built-in release history modal (`v1.8.0`).
+- 📜 **What's New / Changes Log Modal**: Built-in release history modal (`v1.9`).
 - 📱 **Fluid Responsive Design**: Metropol-inspired dark aesthetic, optimized for screen widths from 320px mobile to 4K desktop.
 
 ---

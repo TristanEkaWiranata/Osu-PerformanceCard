@@ -794,7 +794,11 @@ function renderPerformanceProfile(data) {
   }
 
   // Set sample size text dynamically
-  perfSampleSize.textContent = `Based on ${data.sample_size} best plays`;
+  if (data.candidate_count && data.candidate_count > data.sample_size) {
+    perfSampleSize.textContent = `Based on ${data.sample_size} analyzed plays (${data.candidate_count} candidates \u00b7 Top 5 weighted)`;
+  } else {
+    perfSampleSize.textContent = `Based on ${data.sample_size} analyzed plays (Top 5 weighted)`;
+  }
   
   perfLoading.hidden = true;
   perfError.hidden   = true;
@@ -866,8 +870,46 @@ perfRetryBtn.addEventListener('click', () => {
 //
 
 const CHANGELOG = {
-  currentVersion: 'v1.8.0',
+  currentVersion: 'v1.9',
   releases: [
+    {
+      version: 'v1.9',
+      date: 'August 14, 2026',
+      title: 'Performance Profile Optimization',
+      sections: [
+        {
+          type: 'new',
+          title: '✨ Sample Pool Expansion & Adaptive Analysis',
+          items: [
+            { desc: 'Expanded Performance Profile candidate pool to retrieve and evaluate up to 100 best plays.' },
+            { desc: 'Added adaptive deep-analysis limits per ruleset (40 for Standard/Mania, 30 for Catch/Taiko).' },
+            { desc: 'Performance Profile now distinguishes candidate plays from deeply analyzed plays.' },
+            { desc: 'Added clearer analyzed-play metadata in the Performance Profile.' }
+          ]
+        },
+        {
+          type: 'improved',
+          title: '⚡ Throughput, Caching & Pipeline Stability',
+          items: [
+            { desc: 'Standard and Mania can analyze up to 40 uncached candidates.' },
+            { desc: 'Catch and Taiko use up to 30 uncached deep analyses while automatically incorporating cached candidates.' },
+            { desc: 'Added cache-first candidate processing to ingest pre-cached beatmaps at zero network latency.' },
+            { desc: 'Added in-flight request deduplication across concurrent beatmap attribute and raw download queries.' },
+            { desc: 'Added bounded request concurrency (MAX_CONCURRENCY = 4) and pacing to reduce rate-limit pressure.' },
+            { desc: 'Improved statistical stability of Performance Profile results for players with deeper score histories.' },
+            { desc: 'Preserved the existing Top-5 weighted aggregation with 0.90^j decay.' }
+          ]
+        },
+        {
+          type: 'fixed',
+          title: '🛠️ Fairness & Robustness',
+          items: [
+            { desc: 'Reduced instability caused by relying on a very small subset of a player\'s best-score list.' },
+            { desc: 'Prevented misleading "Based on X plays" metadata when additional candidate plays were evaluated.' }
+          ]
+        }
+      ]
+    },
     {
       version: 'v1.8.0',
       date: 'August 14, 2026',
