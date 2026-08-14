@@ -139,7 +139,7 @@ function fmtPlayTime(totalSeconds) {
 function buildOsuProfileUrl(username, mode) {
   if (!username) return '#';
   const safeUser = encodeURIComponent(username);
-  const safeMode = mode === 'mania' ? 'mania' : mode === 'fruits' ? 'fruits' : 'osu';
+  const safeMode = mode === 'mania' ? 'mania' : mode === 'fruits' ? 'fruits' : mode === 'taiko' ? 'taiko' : 'osu';
   return `https://osu.ppy.sh/users/${safeUser}/${safeMode}`;
 }
 
@@ -610,6 +610,7 @@ function renderPerformanceProfile(data) {
   const m = data.metrics;
   const isMania = data.mode === 'mania';
   const isFruits = data.mode === 'fruits';
+  const isTaiko = data.mode === 'taiko';
 
   const card1 = document.querySelector('.perf-grid > div:nth-child(1)');
   const card2 = document.querySelector('.perf-grid > div:nth-child(2)');
@@ -645,6 +646,54 @@ function renderPerformanceProfile(data) {
     setTimeout(() => {
       perfBarAim.style.width   = `${clampWidth(m.movement)}%`;
       perfBarSpeed.style.width = `${clampWidth(m.accuracy)}%`;
+    }, 50);
+
+  } else if (isTaiko) {
+    if (card1) card1.style.display = '';
+    if (card2) card2.style.display = '';
+    if (card3) card3.style.display = '';
+    if (card4) card4.style.display = '';
+
+    // Taiko Layout: READING, SPEED, STAMINA, TECHNICAL
+    if (card1) {
+      card1.className = 'perf-card perf-card--reading';
+      const nameEl = card1.querySelector('.perf-metric-name');
+      if (nameEl) nameEl.textContent = 'READING';
+      const barEl = card1.querySelector('.perf-bar-fill');
+      if (barEl) barEl.className = 'perf-bar-fill perf-bar-fill--reading';
+    }
+    if (card2) {
+      card2.className = 'perf-card perf-card--speed';
+      const nameEl = card2.querySelector('.perf-metric-name');
+      if (nameEl) nameEl.textContent = 'SPEED';
+      const barEl = card2.querySelector('.perf-bar-fill');
+      if (barEl) barEl.className = 'perf-bar-fill perf-bar-fill--speed';
+    }
+    if (card3) {
+      card3.className = 'perf-card perf-card--stamina';
+      const nameEl = card3.querySelector('.perf-metric-name');
+      if (nameEl) nameEl.textContent = 'STAMINA';
+      const barEl = card3.querySelector('.perf-bar-fill');
+      if (barEl) barEl.className = 'perf-bar-fill perf-bar-fill--stamina';
+    }
+    if (card4) {
+      card4.className = 'perf-card perf-card--technical';
+      const nameEl = card4.querySelector('.perf-metric-name');
+      if (nameEl) nameEl.textContent = 'TECHNICAL';
+      const barEl = card4.querySelector('.perf-bar-fill');
+      if (barEl) barEl.className = 'perf-bar-fill perf-bar-fill--technical';
+    }
+
+    perfValAim.textContent      = `${Number(m.reading ?? 0).toFixed(1)} / 10`;
+    perfValSpeed.textContent    = `${Number(m.speed ?? 0).toFixed(1)} / 10`;
+    perfValAccuracy.textContent = `${Number(m.stamina ?? 0).toFixed(1)} / 10`;
+    perfValStamina.textContent  = `${Number(m.technical ?? 0).toFixed(1)} / 10`;
+
+    setTimeout(() => {
+      perfBarAim.style.width      = `${clampWidth(m.reading)}%`;
+      perfBarSpeed.style.width    = `${clampWidth(m.speed)}%`;
+      perfBarAccuracy.style.width = `${clampWidth(m.stamina)}%`;
+      perfBarStamina.style.width  = `${clampWidth(m.technical)}%`;
     }, 50);
 
   } else if (isMania) {
@@ -759,8 +808,8 @@ async function loadPerformanceProfile(username, mode) {
   lastSearchedUsername = username;
   lastSearchedMode     = mode;
 
-  // Mode gating: currently osu (Standard), mania, and fruits are supported
-  if (mode !== 'osu' && mode !== 'mania' && mode !== 'fruits') {
+  // Mode gating: currently osu (Standard), mania, fruits, and taiko are supported
+  if (mode !== 'osu' && mode !== 'mania' && mode !== 'fruits' && mode !== 'taiko') {
     perfProfileContainer.hidden = true;
     return;
   }
@@ -817,8 +866,52 @@ perfRetryBtn.addEventListener('click', () => {
 //
 
 const CHANGELOG = {
-  currentVersion: 'v1.7.0',
+  currentVersion: 'v1.8.0',
   releases: [
+    {
+      version: 'v1.8.0',
+      date: 'August 14, 2026',
+      title: 'osu!Taiko Performance Profile',
+      sections: [
+        {
+          type: 'new',
+          title: '✨ osu!Taiko Four-Skill Performance Profile',
+          items: [
+            { desc: 'Added official support for the osu!Taiko game mode in BeatCard Performance Profile.' },
+            { desc: 'Implemented four specialized Taiko skill dimensions: READING, SPEED, STAMINA, and TECHNICAL.' },
+            { desc: 'Added Taiko-specific raw .osu beatmap analysis for accurate mechanic-level metrics.' },
+            { desc: 'Added Taiko rhythm transition analysis (inter-onset interval variance and cadence shifts).' },
+            { desc: 'Added P95 burst frequency analysis for precision peak speed evaluation.' },
+            { desc: 'Added sustained stream duration analysis for true continuous stamina measurement.' },
+            { desc: 'Added Don/Kat colour switching and 4-gram technical pattern complexity & entropy analysis.' },
+            { desc: 'Added Taiko-specific fallback calculations when raw beatmap data is unavailable.' },
+            { desc: 'Added FULL / REDUCED confidence handling based on raw beatmap availability.' }
+          ]
+        },
+        {
+          type: 'improved',
+          title: '⚡ Performance, Caching & Integration',
+          items: [
+            { desc: 'Added Taiko-specific cache isolation (v1_taiko).' },
+            { desc: 'Added rate-aware raw beatmap caching for DT / HT / NC mod variants.' },
+            { desc: 'Added batched raw .osu downloads to eliminate upstream 429 rate limit risks.' },
+            { desc: 'Added Taiko ruleset-aware Performance Profile rendering with custom 4-card styling.' },
+            { desc: 'Preserved existing Standard, Mania, and CTB Performance Profiles without regressions.' }
+          ]
+        },
+        {
+          type: 'fixed',
+          title: '🛠️ Precision & Fairness Safeguards',
+          items: [
+            { desc: 'Prevented Taiko raw beatmap features from being mixed across different mod rates.' },
+            { desc: 'Prevented long low-density maps from artificially inflating Stamina rating.' },
+            { desc: 'Prevented simple mono-color streams from artificially inflating Technical rating.' },
+            { desc: 'Separated Taiko Reading from raw object density.' },
+            { desc: 'Separated Taiko Technical from overall Star Rating and raw speed dependency.' }
+          ]
+        }
+      ]
+    },
     {
       version: 'v1.7.0',
       date: 'August 14, 2026',

@@ -1408,6 +1408,9 @@ button { cursor: pointer; font-family: inherit; border: none; background: none; 
 .perf-card--ln:hover {
   box-shadow: 0 4px 20px rgba(16, 185, 129, 0.08);
 }
+.perf-card--technical:hover {
+  box-shadow: 0 4px 20px rgba(244, 63, 94, 0.08);
+}
 
 .perf-card-header {
   display: flex;
@@ -1464,6 +1467,9 @@ button { cursor: pointer; font-family: inherit; border: none; background: none; 
 .perf-bar-fill--movement,
 .perf-bar-fill--ln {
   background: linear-gradient(90deg, #10b981 0%, #34d399 100%);
+}
+.perf-bar-fill--technical {
+  background: linear-gradient(90deg, #f43f5e 0%, #fb7185 100%);
 }
 
 /* Footer & Disclaimer */

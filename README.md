@@ -6,7 +6,7 @@
 
 [![Node.js Version](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen.svg)](https://nodejs.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-v1.7.0-blue.svg)](public/app.js)
+[![Version](https://img.shields.io/badge/version-v1.8.0-blue.svg)](public/app.js)
 [![osu! API v2](https://img.shields.io/badge/osu!%20API-v2-ff66aa.svg)](https://osu.ppy.sh/docs)
 
 *BeatCard is a web application that generates aesthetic player cards and skill performance profiles for osu! players using official osu! API v2 data.*
@@ -30,6 +30,7 @@ All skill ratings are scaled from **0.0 to 10.0** using top-5 weighted decay agg
 | Mode | Ruleset | Skill Profile Dimensions | Calculation Highlights |
 |:---|:---:|:---:|:---|
 | **osu! Standard** | `osu` | `AIM` • `SPEED` • `ACCURACY` • `STAMINA` | Aim & Speed rating scaling, OD timing window analysis, Candidate D logarithmic note-density stamina modeling. |
+| **osu!Taiko** | `taiko` | `READING` • `SPEED` • `STAMINA` • `TECHNICAL` | **Four-Skill Model**: Rhythm transition rate & interval CV reading, P95 burst frequency speed, sustained stream duration stamina, and Don/Kat 4-gram color entropy technical analysis. |
 | **osu!mania** | `mania` | `SPEED` • `ACCURACY` • `STAMINA` • `LN CONTROL` | Normalized miss penalty based on total playable objects, max timing ratio (300g/MAX), and Long Note ratio scaling. |
 | **osu!catch** | `fruits` | `MOVEMENT` • `ACCURACY` | **Two-Skill Model**: Spatial required velocity ($v_{\text{P95}}$) & hyperdash ratio from raw `.osu` files, droplet judgment quality. |
 
@@ -38,11 +39,11 @@ All skill ratings are scaled from **0.0 to 10.0** using top-5 weighted decay agg
 ## ✨ Features
 
 - ⚡ **Official osu! API v2 Integration**: Uses client credentials OAuth for fast, reliable player lookups.
-- 🎯 **Raw `.osu` Spatial Movement Analysis**: Parses beatmap hit objects for CTB spatial velocity ($v_{\text{P95}}$) with graceful fallback (`movement_confidence: "FULL" | "REDUCED"`).
+- 🎯 **Raw `.osu` Spatial Movement & Rhythm Analysis**: Parses beatmap hit objects for CTB spatial velocity ($v_{\text{P95}}$) and Taiko stream/pattern metrics with graceful fallback (`confidence: "FULL" | "REDUCED"`).
 - 💾 **Saved Cards Gallery**: Save favorite player cards locally to compare profiles anytime.
 - 📸 **High-Resolution PNG Export**: One-click card export to PNG image powered by `html2canvas`.
 - 🔗 **View Profile Link**: Instant one-click link to the player's official osu! user page for the selected game mode.
-- 📜 **What's New / Changes Log Modal**: Built-in release history modal (`v1.7.0`).
+- 📜 **What's New / Changes Log Modal**: Built-in release history modal (`v1.8.0`).
 - 📱 **Fluid Responsive Design**: Metropol-inspired dark aesthetic, optimized for screen widths from 320px mobile to 4K desktop.
 
 ---

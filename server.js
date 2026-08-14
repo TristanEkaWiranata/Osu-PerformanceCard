@@ -484,6 +484,165 @@ async function getRawOsuMovementFeatures(beatmapId, cs = 5.0) {
   }
 }
 
+// ─── Taiko Raw Beatmap Helper & Cache ────────────────────────────────────────
+const rawTaikoCache = new Map(); // `${beatmapId}_rate${rate}` -> { rhythmTransitionRate, intervalCV, p95Freq, fastIntervalRatio, totalStreamSec, longestStreamSec, fastSwitchRate, complexPatternRatio, normH4 }
+
+function parseTaikoHitObjects(text) {
+  const lines = text.split('\n');
+  let inHitObjects = false;
+  const objects = [];
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed === '[HitObjects]') { inHitObjects = true; continue; }
+    if (inHitObjects && trimmed.startsWith('[')) { inHitObjects = false; }
+    if (inHitObjects && trimmed) {
+      const parts = trimmed.split(',');
+      if (parts.length >= 5) {
+        const time = Number(parts[2]);
+        const type = Number(parts[3]);
+        const hitSound = Number(parts[4]);
+
+        const isCircle = (type & 1) !== 0;
+        let color = 'don';
+        if ((hitSound & 2) !== 0 || (hitSound & 8) !== 0) {
+          color = 'kat';
+        }
+        const isStrong = (hitSound & 4) !== 0;
+
+        objects.push({ time, isCircle, color, isStrong });
+      }
+    }
+  }
+  return objects;
+}
+
+async function getRawOsuTaikoFeatures(beatmapId, rate = 1.0) {
+  const cacheKey = `${beatmapId}_rate${rate}`;
+  if (rawTaikoCache.has(cacheKey)) {
+    return rawTaikoCache.get(cacheKey);
+  }
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 2500); // 2.5s safety timeout
+
+    const res = await fetch(`https://osu.ppy.sh/osu/${beatmapId}`, { signal: controller.signal });
+    clearTimeout(timeoutId);
+
+    if (!res.ok) return null;
+    const text = await res.text();
+    const objs = parseTaikoHitObjects(text);
+    const circles = objs.filter(o => o.isCircle);
+    if (circles.length < 5) return null;
+
+    const n = circles.length;
+    const intervals = [];
+    const fastIntervals = [];
+    let fastColorSwitches = 0;
+
+    const fourGrams = {};
+    let fourGramTotal = 0;
+    let complexPatternCount = 0;
+
+    const STREAM_THR = 130;
+    const streams = [];
+    let curStreamLen = 1;
+    let curStreamDur = 0;
+    let totalStreamDurMs = 0;
+    let longestStreamMs = 0;
+    let rhythmTransitions = 0;
+
+    // Apply rate modifier to timestamps
+    const times = circles.map(c => c.time / rate);
+
+    for (let i = 1; i < n; i++) {
+      const dt = Math.max(1, times[i] - times[i-1]);
+      intervals.push(dt);
+
+      const isSwitch = circles[i].color !== circles[i-1].color;
+
+      if (dt <= STREAM_THR) {
+        if (isSwitch) fastColorSwitches++;
+        fastIntervals.push(dt);
+        curStreamLen++;
+        curStreamDur += dt;
+
+        if (i >= 3) {
+          const p4 = `${circles[i-3].color[0]}${circles[i-2].color[0]}${circles[i-1].color[0]}${circles[i].color[0]}`;
+          fourGrams[p4] = (fourGrams[p4] || 0) + 1;
+          fourGramTotal++;
+          if (p4 !== 'dddd' && p4 !== 'kkkk' && p4 !== 'dkdk' && p4 !== 'kdkd') {
+            complexPatternCount++;
+          }
+        }
+      } else {
+        if (curStreamLen >= 4) {
+          streams.push({ len: curStreamLen, duration: curStreamDur });
+          totalStreamDurMs += curStreamDur;
+          if (curStreamDur > longestStreamMs) longestStreamMs = curStreamDur;
+        }
+        curStreamLen = 1;
+        curStreamDur = 0;
+      }
+
+      if (i >= 2) {
+        const prevDt = Math.max(1, times[i-1] - times[i-2]);
+        const ratio = dt / prevDt;
+        if (ratio < 0.85 || ratio > 1.18) rhythmTransitions++;
+      }
+    }
+
+    if (curStreamLen >= 4) {
+      streams.push({ len: curStreamLen, duration: curStreamDur });
+      totalStreamDurMs += curStreamDur;
+      if (curStreamDur > longestStreamMs) longestStreamMs = curStreamDur;
+    }
+
+    const sortedInt = [...intervals].sort((a, b) => a - b);
+    const p05Int = sortedInt[Math.floor(0.05 * sortedInt.length)] || 100;
+    const p95Freq = 1000 / Math.max(1, p05Int);
+    const fastIntervalRatio = fastIntervals.length / Math.max(1, intervals.length);
+
+    let sumInt = 0;
+    for (const v of intervals) sumInt += v;
+    const meanInt = sumInt / intervals.length;
+
+    let varInt = 0;
+    for (const v of intervals) varInt += Math.pow(v - meanInt, 2);
+    const stdInt = Math.sqrt(varInt / intervals.length);
+    const intervalCV = stdInt / Math.max(1, meanInt);
+    const rhythmTransitionRate = rhythmTransitions / Math.max(1, n - 2);
+
+    let h4 = 0;
+    if (fourGramTotal > 0) {
+      for (const pat in fourGrams) {
+        const pr = fourGrams[pat] / fourGramTotal;
+        if (pr > 0) h4 -= pr * Math.log2(pr);
+      }
+    }
+    const normH4 = h4 / 4.0; // log2(16) = 4.0
+    const complexPatternRatio = fourGramTotal > 0 ? complexPatternCount / fourGramTotal : 0;
+    const fastSwitchRate = fastColorSwitches / Math.max(1, fastIntervals.length);
+
+    const feat = {
+      rhythmTransitionRate,
+      intervalCV,
+      p95Freq,
+      fastIntervalRatio,
+      totalStreamSec: totalStreamDurMs / 1000,
+      longestStreamSec: longestStreamMs / 1000,
+      fastSwitchRate,
+      complexPatternRatio,
+      normH4,
+    };
+
+    rawTaikoCache.set(cacheKey, feat);
+    return feat;
+  } catch {
+    return null; // Graceful fallback on network error/timeout
+  }
+}
+
 /**
  * Calculate BeatCard's derived performance profile.
  *
@@ -804,7 +963,100 @@ function calculatePerformanceProfile(entries, mode) {
     };
   }
 
-  // Other modes will be implemented after Standard, Mania, and Catch.
+  // ── osu!taiko ─────────────────────────────────────────────────────────────
+  if (mode === 'taiko') {
+    const readingRawValues   = [];
+    const speedRawValues     = [];
+    const staminaRawValues   = [];
+    const technicalRawValues = [];
+    let fullConfidenceCount  = 0;
+
+    for (const entry of entries) {
+      const score   = entry.score;
+      const beatmap = entry.beatmap;
+      const attr    = entry.attributes;
+
+      const accuracy   = Number(score.accuracy) || 0; // decimal 0.0 to 1.0
+      const misses     = Number(score.statistics?.count_miss) || 0;
+      const starRating = Number(attr.star_rating) || Number(beatmap.difficulty_rating) || 0;
+
+      const circles      = Number(beatmap.count_circles) || 0;
+      const sliders      = Number(beatmap.count_sliders) || 0;
+      const spinners     = Number(beatmap.count_spinners) || 0;
+      const totalObjects = circles + sliders + spinners;
+      const effObjects   = totalObjects > 0 ? totalObjects : ((Number(score.statistics?.count_300) || 0) + (Number(score.statistics?.count_100) || 0) + misses) || 1;
+      const missRate     = misses / effObjects;
+
+      const rawFeat = entry.rawTaikoFeatures;
+
+      if (rawFeat && typeof rawFeat.p95Freq === 'number') {
+        fullConfidenceCount++;
+
+        // 1. READING
+        const readingRaw = (2.0 * rawFeat.rhythmTransitionRate + 0.4 * Math.min(3.0, rawFeat.intervalCV)) *
+          (0.85 + 0.15 * Math.min(10, starRating) / 10) * accuracy * Math.exp(-10 * missRate);
+        readingRawValues.push(readingRaw);
+
+        // 2. SPEED
+        const speedRaw = (rawFeat.p95Freq / 2.5) * (1 + 0.20 * rawFeat.fastIntervalRatio) * accuracy * Math.exp(-8 * missRate);
+        speedRawValues.push(speedRaw);
+
+        // 3. STAMINA
+        const staminaRaw = (0.50 * rawFeat.totalStreamSec + 2.00 * rawFeat.longestStreamSec) * Math.pow(accuracy, 2) * Math.exp(-15 * missRate);
+        staminaRawValues.push(staminaRaw);
+
+        // 4. TECHNICAL
+        const technicalRaw = (1.50 * rawFeat.fastSwitchRate + 1.20 * rawFeat.complexPatternRatio + 0.80 * rawFeat.normH4) * accuracy * Math.exp(-15 * missRate);
+        technicalRawValues.push(technicalRaw);
+      } else {
+        // Fallback: REDUCED confidence
+        const readingFallback = 1.20 * (0.85 + 0.15 * Math.min(10, starRating) / 10) * accuracy * Math.exp(-10 * missRate);
+        const speedFallback = (starRating * 1.25) * accuracy * Math.exp(-8 * missRate);
+        const staminaFallback = (circles * 0.08) * Math.pow(accuracy, 2) * Math.exp(-15 * missRate);
+        const technicalFallback = 2.20 * accuracy * Math.exp(-15 * missRate);
+
+        readingRawValues.push(readingFallback);
+        speedRawValues.push(speedFallback);
+        staminaRawValues.push(staminaFallback);
+        technicalRawValues.push(technicalFallback);
+      }
+    }
+
+    // Top 5 Aggregation with 0.90^j decay
+    const aggregateTop5 = (vals) => {
+      vals.sort((a, b) => b - a);
+      const top5 = vals.slice(0, 5);
+      let sum = 0, wSum = 0;
+      top5.forEach((val, j) => {
+        const w = Math.pow(0.90, j);
+        sum += val * w;
+        wSum += w;
+      });
+      return wSum > 0 ? sum / wSum : 0;
+    };
+
+    const rWeighted  = aggregateTop5(readingRawValues);
+    const sWeighted  = aggregateTop5(speedRawValues);
+    const stWeighted = aggregateTop5(staminaRawValues);
+    const tWeighted  = aggregateTop5(technicalRawValues);
+
+    const scaleRating = (raw, smax, exp = 0.85) => {
+      if (raw === null || raw === undefined) return null;
+      const val = clamp(10 * Math.pow(raw / smax, exp), 0, 10);
+      return Number(val.toFixed(1));
+    };
+
+    const confidence = fullConfidenceCount >= 3 ? 'FULL' : 'REDUCED';
+
+    return {
+      reading: scaleRating(rWeighted, 2.00, 0.85),
+      speed: scaleRating(sWeighted, 12.00, 0.85),
+      stamina: scaleRating(stWeighted, 160.0, 0.80),
+      technical: scaleRating(tWeighted, 3.20, 0.85),
+      taiko_confidence: confidence,
+    };
+  }
+
   return null;
 }
 
@@ -925,7 +1177,7 @@ async function computePerformanceProfile(username, mode) {
         );
         if (!attrRes.ok) return null;
         const attrData = await attrRes.json();
-        return { score, beatmap: score.beatmap || {}, attributes: attrData.attributes || {}, rawMovementFeatures: null };
+        return { score, beatmap: score.beatmap || {}, attributes: attrData.attributes || {}, rawMovementFeatures: null, rawTaikoFeatures: null };
       } catch { return null; }
     })
   );
@@ -947,6 +1199,28 @@ async function computePerformanceProfile(username, mode) {
         if (!beatmapId) return;
         const cs = Number(entry.beatmap?.cs) || 5.0;
         entry.rawMovementFeatures = await getRawOsuMovementFeatures(beatmapId, cs);
+      }));
+      if (i + BATCH_SIZE < validScores.length) {
+        await new Promise(r => setTimeout(r, 60)); // 60ms batch delay
+      }
+    }
+  }
+
+  // If taiko mode, fetch raw .osu taiko features in batches of 4 to prevent 429 rate limits
+  if (mode === 'taiko') {
+    const BATCH_SIZE = 4;
+    for (let i = 0; i < validScores.length; i += BATCH_SIZE) {
+      const batch = validScores.slice(i, i + BATCH_SIZE);
+      await Promise.all(batch.map(async (entry) => {
+        const beatmapId = entry.score.beatmap?.id ?? entry.score.beatmap_id;
+        if (!beatmapId) return;
+        const mods = Array.isArray(entry.score.mods)
+          ? entry.score.mods.map(m => (typeof m === 'string' ? m : m.acronym))
+          : [];
+        const isDT = mods.includes('DT') || mods.includes('NC');
+        const isHT = mods.includes('HT');
+        const rate = isDT ? 1.5 : isHT ? 0.75 : 1.0;
+        entry.rawTaikoFeatures = await getRawOsuTaikoFeatures(beatmapId, rate);
       }));
       if (i + BATCH_SIZE < validScores.length) {
         await new Promise(r => setTimeout(r, 60)); // 60ms batch delay
@@ -982,7 +1256,7 @@ function handlePerfError(err, res) {
  *
  * BeatCard-derived performance profile.
  * These values are estimates — NOT official osu! statistics.
- * Supported modes: osu (Standard), mania (osu!mania), fruits (osu!catch).
+ * Supported modes: osu (Standard), mania (osu!mania), fruits (osu!catch), taiko (osu!taiko).
  */
 app.get('/api/user/:username/:mode/performance', async (req, res) => {
   const rawUsername = req.params.username;
@@ -1004,11 +1278,11 @@ app.get('/api/user/:username/:mode/performance', async (req, res) => {
     });
   }
 
-  // Only osu standard, mania, and fruits are implemented
-  if (mode !== 'osu' && mode !== 'mania' && mode !== 'fruits') {
+  // Only osu standard, mania, fruits, and taiko are implemented
+  if (mode !== 'osu' && mode !== 'mania' && mode !== 'fruits' && mode !== 'taiko') {
     return res.status(501).json({
       error: 'MODE_NOT_IMPLEMENTED',
-      message: `Performance profile for "${mode}" mode is not yet implemented. Only "osu" (osu! Standard), "mania" (osu!mania), and "fruits" (osu!catch) are currently supported.`,
+      message: `Performance profile for "${mode}" mode is not yet implemented. Only "osu" (osu! Standard), "mania" (osu!mania), "fruits" (osu!catch), and "taiko" (osu!taiko) are currently supported.`,
     });
   }
 
@@ -1021,7 +1295,7 @@ app.get('/api/user/:username/:mode/performance', async (req, res) => {
   }
 
   const username = rawUsername.trim();
-  const cacheVersion = mode === 'mania' ? 'v23' : mode === 'fruits' ? 'v1_fruits' : 'v24';
+  const cacheVersion = mode === 'mania' ? 'v23' : mode === 'fruits' ? 'v1_fruits' : mode === 'taiko' ? 'v1_taiko' : 'v24';
   const cacheKey = `${username}:${mode}:${cacheVersion}`;
 
   // ── Cache hit ──────────────────────────────────────────────────────────────
