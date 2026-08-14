@@ -712,6 +712,50 @@ async function fetchBeatmapAttributes(beatmapId, mode, mods, token) {
   return fetchPromise;
 }
 
+// ─── Point-Based Performance Profile Configuration (v2.0) ───────────────────
+const POINT_CONFIG = {
+  osu: {
+    aim:      { anchor: 6.00,  exponent: 0.80 },
+    speed:    { anchor: 4.00,  exponent: 0.80 },
+    accuracy: { anchor: 0.92,  exponent: 0.80 },
+    stamina:  { anchor: 4.20,  exponent: 0.80 },
+  },
+  mania: {
+    speed:      { anchor: 21.00,  exponent: 0.80 },
+    accuracy:   { anchor: 0.72,   exponent: 0.80 },
+    stamina:    { anchor: 250.00, exponent: 0.80 },
+    ln_control: { anchor: 5.60,   exponent: 0.80 },
+  },
+  fruits: {
+    movement: { anchor: 2.60, exponent: 0.85 },
+    accuracy: { anchor: 0.96, exponent: 1.00 },
+  },
+  taiko: {
+    reading:   { anchor: 1.60,   exponent: 0.85 },
+    speed:     { anchor: 12.50,  exponent: 0.85 },
+    stamina:   { anchor: 170.00, exponent: 0.80 },
+    technical: { anchor: 2.60,   exponent: 0.85 },
+  }
+};
+
+/**
+ * Convert a WeightedRaw metric value into unlimited v2.0 Skill Points.
+ * Non-negative, no upper ceiling, full floating-point precision in raw_points.
+ */
+function convertToSkillPoints(raw, anchor, exponent) {
+  if (raw === null || raw === undefined || raw <= 0 || !Number.isFinite(raw)) {
+    return { points: 0, raw_points: 0 };
+  }
+  const rawPoints = 1000 * Math.pow(raw / anchor, exponent);
+  if (!Number.isFinite(rawPoints) || Number.isNaN(rawPoints) || rawPoints < 0) {
+    return { points: 0, raw_points: 0 };
+  }
+  return {
+    points: Math.round(rawPoints),
+    raw_points: Number(rawPoints.toFixed(2)),
+  };
+}
+
 /**
  * Calculate BeatCard's derived performance profile.
  *
@@ -768,7 +812,7 @@ function calculatePerformanceProfile(entries, mode) {
         const timingAcc = count300 / timingDenom;
         const adjustedOD = getAdjustedOD(baseOD, mods);
         const starRating = Number(attr.star_rating) || 0;
-        const accuracyRaw = adjustedOD * timingAcc * (0.9 + 0.1 * Math.min(8, starRating) / 8);
+        const accuracyRaw = (adjustedOD / 10.0) * timingAcc * (0.9 + 0.1 * Math.min(8, starRating) / 8);
         accuracyValues.push({ value: accuracyRaw, weight: ppWeight });
       }
 
@@ -801,23 +845,26 @@ function calculatePerformanceProfile(entries, mode) {
     });
     const staminaRawWeighted = staminaWeightSum > 0 ? staminaRawSum / staminaWeightSum : 0;
 
-    // Reference maximums
-    const SMAX_AIM      = 7.5;
-    const SMAX_SPEED    = 4.0;
-    const SMAX_ACCURACY = 11.0;
-    const SMAX_STAMINA  = 6.5;
-
-    const scaleRating = (raw, smax) => {
-      if (raw === null || raw === undefined) return null;
-      const val = clamp(10 * Math.pow(raw / smax, 0.8), 0, 10);
-      return Number(val.toFixed(1));
-    };
+    // Convert to v2.0 Skill Points
+    const cfg = POINT_CONFIG.osu;
+    const ptAim     = convertToSkillPoints(aimRawAvg, cfg.aim.anchor, cfg.aim.exponent);
+    const ptSpeed   = convertToSkillPoints(speedRawAvg, cfg.speed.anchor, cfg.speed.exponent);
+    const ptAcc     = convertToSkillPoints(accuracyRawAvg, cfg.accuracy.anchor, cfg.accuracy.exponent);
+    const ptStamina = convertToSkillPoints(staminaRawWeighted, cfg.stamina.anchor, cfg.stamina.exponent);
 
     return {
-      aim: scaleRating(aimRawAvg, SMAX_AIM),
-      speed: scaleRating(speedRawAvg, SMAX_SPEED),
-      accuracy: scaleRating(accuracyRawAvg, SMAX_ACCURACY),
-      stamina: scaleRating(staminaRawWeighted, SMAX_STAMINA),
+      metrics: {
+        aim: ptAim.points,
+        speed: ptSpeed.points,
+        accuracy: ptAcc.points,
+        stamina: ptStamina.points,
+      },
+      points_raw: {
+        aim: ptAim.raw_points,
+        speed: ptSpeed.raw_points,
+        accuracy: ptAcc.raw_points,
+        stamina: ptStamina.raw_points,
+      },
     };
   }
 
@@ -927,21 +974,27 @@ function calculatePerformanceProfile(entries, mode) {
     const lnRawWeighted = lnW > 0 ? lnSum / lnW : 0;
     const confidenceLN = Math.min(1.0, lnHeavyCount / 5.0);
 
-    const scaleRating = (raw, smax, exp = 0.8) => {
-      if (raw === null || raw === undefined) return null;
-      const val = clamp(10 * Math.pow(raw / smax, exp), 0, 10);
-      return Number(val.toFixed(1));
-    };
-
-    // ── Model D2 Smax constants (recalibrated alongside normalized miss penalty)
-    const rawLNRating = scaleRating(lnRawWeighted, 6.0, 0.8) ?? 0;
-    const finalLNRating = Number(clamp(rawLNRating * confidenceLN, 0, 10).toFixed(1));
+    // Convert to v2.0 Skill Points
+    const cfg = POINT_CONFIG.mania;
+    const ptSpeed   = convertToSkillPoints(speedRawAvg, cfg.speed.anchor, cfg.speed.exponent);
+    const ptAcc     = convertToSkillPoints(accuracyRawAvg, cfg.accuracy.anchor, cfg.accuracy.exponent);
+    const ptStamina = convertToSkillPoints(staminaRawWeighted, cfg.stamina.anchor, cfg.stamina.exponent);
+    const finalLNRaw = lnRawWeighted * confidenceLN;
+    const ptLN      = convertToSkillPoints(finalLNRaw, cfg.ln_control.anchor, cfg.ln_control.exponent);
 
     return {
-      speed: scaleRating(speedRawAvg, 22.0, 0.8),
-      accuracy: scaleRating(accuracyRawAvg, 0.80, 0.8),
-      stamina: scaleRating(staminaRawWeighted, 260.0, 0.8),
-      ln_control: finalLNRating,
+      metrics: {
+        speed: ptSpeed.points,
+        accuracy: ptAcc.points,
+        stamina: ptStamina.points,
+        ln_control: ptLN.points,
+      },
+      points_raw: {
+        speed: ptSpeed.raw_points,
+        accuracy: ptAcc.raw_points,
+        stamina: ptStamina.raw_points,
+        ln_control: ptLN.raw_points,
+      },
     };
   }
 
@@ -1017,18 +1070,23 @@ function calculatePerformanceProfile(entries, mode) {
     });
     const accuracyRawWeighted = accW > 0 ? accSum / accW : 0;
 
-    const scaleRating = (raw, smax, exp = 0.8) => {
-      if (raw === null || raw === undefined) return null;
-      const val = clamp(10 * Math.pow(raw / smax, exp), 0, 10);
-      return Number(val.toFixed(1));
-    };
-
     const confidence = fullConfidenceCount >= 3 ? 'FULL' : 'REDUCED';
 
+    // Convert to v2.0 Skill Points
+    const cfg = POINT_CONFIG.fruits;
+    const ptMovement = convertToSkillPoints(movementRawWeighted, cfg.movement.anchor, cfg.movement.exponent);
+    const ptAcc      = convertToSkillPoints(accuracyRawWeighted, cfg.accuracy.anchor, cfg.accuracy.exponent);
+
     return {
-      movement: scaleRating(movementRawWeighted, 3.50, 0.85),
-      accuracy: scaleRating(accuracyRawWeighted, 1.00, 1.00),
-      movement_confidence: confidence,
+      metrics: {
+        movement: ptMovement.points,
+        accuracy: ptAcc.points,
+        movement_confidence: confidence,
+      },
+      points_raw: {
+        movement: ptMovement.raw_points,
+        accuracy: ptAcc.raw_points,
+      },
     };
   }
 
@@ -1109,20 +1167,29 @@ function calculatePerformanceProfile(entries, mode) {
     const stWeighted = aggregateTop5(staminaRawValues);
     const tWeighted  = aggregateTop5(technicalRawValues);
 
-    const scaleRating = (raw, smax, exp = 0.85) => {
-      if (raw === null || raw === undefined) return null;
-      const val = clamp(10 * Math.pow(raw / smax, exp), 0, 10);
-      return Number(val.toFixed(1));
-    };
-
     const confidence = fullConfidenceCount >= 3 ? 'FULL' : 'REDUCED';
 
+    // Convert to v2.0 Skill Points
+    const cfg = POINT_CONFIG.taiko;
+    const ptReading   = convertToSkillPoints(rWeighted, cfg.reading.anchor, cfg.reading.exponent);
+    const ptSpeed     = convertToSkillPoints(sWeighted, cfg.speed.anchor, cfg.speed.exponent);
+    const ptStamina   = convertToSkillPoints(stWeighted, cfg.stamina.anchor, cfg.stamina.exponent);
+    const ptTechnical = convertToSkillPoints(tWeighted, cfg.technical.anchor, cfg.technical.exponent);
+
     return {
-      reading: scaleRating(rWeighted, 2.00, 0.85),
-      speed: scaleRating(sWeighted, 12.00, 0.85),
-      stamina: scaleRating(stWeighted, 160.0, 0.80),
-      technical: scaleRating(tWeighted, 3.20, 0.85),
-      taiko_confidence: confidence,
+      metrics: {
+        reading: ptReading.points,
+        speed: ptSpeed.points,
+        stamina: ptStamina.points,
+        technical: ptTechnical.points,
+        taiko_confidence: confidence,
+      },
+      points_raw: {
+        reading: ptReading.raw_points,
+        speed: ptSpeed.raw_points,
+        stamina: ptStamina.raw_points,
+        technical: ptTechnical.raw_points,
+      },
     };
   }
 
@@ -1389,13 +1456,14 @@ async function computePerformanceProfile(username, mode) {
   }
 
   // 5. Derive BeatCard metrics
-  const metrics = calculatePerformanceProfile(validScores, mode);
+  const profile = calculatePerformanceProfile(validScores, mode);
   return {
     mode,
     candidate_count: scores.length,
     sample_size: validScores.length,
     cached: false,
-    metrics,
+    metrics: profile ? profile.metrics : null,
+    points_raw: profile ? profile.points_raw : null,
   };
 }
 
@@ -1461,7 +1529,7 @@ app.get('/api/user/:username/:mode/performance', async (req, res) => {
   }
 
   const username = rawUsername.trim();
-  const cacheVersion = `v2_pool_${mode}`;
+  const cacheVersion = `v3_points_${mode}`;
   const cacheKey = `${username}:${mode}:${cacheVersion}`;
 
   // ── Cache hit ──────────────────────────────────────────────────────────────

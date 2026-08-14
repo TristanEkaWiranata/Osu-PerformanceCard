@@ -617,7 +617,22 @@ function renderPerformanceProfile(data) {
   const card3 = document.querySelector('.perf-grid > div:nth-child(3)');
   const card4 = document.querySelector('.perf-grid > div:nth-child(4)');
 
-  const clampWidth = (val) => Math.max(0, Math.min(100, (Number(val ?? 0) * 10)));
+  const fmtPoints = (pts) => {
+    if (pts == null || Number.isNaN(Number(pts))) return '0 pts';
+    return `${Math.round(Number(pts)).toLocaleString('en-US')} pts`;
+  };
+
+  const calcBarWidth = (pts) => {
+    const p = Number(pts) || 0;
+    if (p <= 0) return 0;
+    if (p <= 1000) {
+      return Math.max(0, Math.min(100, 70 * (p / 1000)));
+    } else {
+      const excess = p - 1000;
+      const w = 70 + 30 * (1 - Math.exp(-excess / 600));
+      return Math.max(0, Math.min(100, w));
+    }
+  };
 
   if (isFruits) {
     // Fruits (osu!catch) Layout: MOVEMENT, ACCURACY (2 cards only)
@@ -640,12 +655,12 @@ function renderPerformanceProfile(data) {
     if (card3) card3.style.display = 'none';
     if (card4) card4.style.display = 'none';
 
-    perfValAim.textContent   = `${Number(m.movement ?? 0).toFixed(1)} / 10`;
-    perfValSpeed.textContent = `${Number(m.accuracy ?? 0).toFixed(1)} / 10`;
+    perfValAim.textContent   = fmtPoints(m.movement);
+    perfValSpeed.textContent = fmtPoints(m.accuracy);
 
     setTimeout(() => {
-      perfBarAim.style.width   = `${clampWidth(m.movement)}%`;
-      perfBarSpeed.style.width = `${clampWidth(m.accuracy)}%`;
+      perfBarAim.style.width   = `${calcBarWidth(m.movement)}%`;
+      perfBarSpeed.style.width = `${calcBarWidth(m.accuracy)}%`;
     }, 50);
 
   } else if (isTaiko) {
@@ -684,16 +699,16 @@ function renderPerformanceProfile(data) {
       if (barEl) barEl.className = 'perf-bar-fill perf-bar-fill--technical';
     }
 
-    perfValAim.textContent      = `${Number(m.reading ?? 0).toFixed(1)} / 10`;
-    perfValSpeed.textContent    = `${Number(m.speed ?? 0).toFixed(1)} / 10`;
-    perfValAccuracy.textContent = `${Number(m.stamina ?? 0).toFixed(1)} / 10`;
-    perfValStamina.textContent  = `${Number(m.technical ?? 0).toFixed(1)} / 10`;
+    perfValAim.textContent      = fmtPoints(m.reading);
+    perfValSpeed.textContent    = fmtPoints(m.speed);
+    perfValAccuracy.textContent = fmtPoints(m.stamina);
+    perfValStamina.textContent  = fmtPoints(m.technical);
 
     setTimeout(() => {
-      perfBarAim.style.width      = `${clampWidth(m.reading)}%`;
-      perfBarSpeed.style.width    = `${clampWidth(m.speed)}%`;
-      perfBarAccuracy.style.width = `${clampWidth(m.stamina)}%`;
-      perfBarStamina.style.width  = `${clampWidth(m.technical)}%`;
+      perfBarAim.style.width      = `${calcBarWidth(m.reading)}%`;
+      perfBarSpeed.style.width    = `${calcBarWidth(m.speed)}%`;
+      perfBarAccuracy.style.width = `${calcBarWidth(m.stamina)}%`;
+      perfBarStamina.style.width  = `${calcBarWidth(m.technical)}%`;
     }, 50);
 
   } else if (isMania) {
@@ -732,16 +747,16 @@ function renderPerformanceProfile(data) {
       if (barEl) barEl.className = 'perf-bar-fill perf-bar-fill--ln';
     }
 
-    perfValAim.textContent      = `${Number(m.speed ?? 0).toFixed(1)} / 10`;
-    perfValSpeed.textContent    = `${Number(m.accuracy ?? 0).toFixed(1)} / 10`;
-    perfValAccuracy.textContent = `${Number(m.stamina ?? 0).toFixed(1)} / 10`;
-    perfValStamina.textContent  = `${Number(m.ln_control ?? 0).toFixed(1)} / 10`;
+    perfValAim.textContent      = fmtPoints(m.speed);
+    perfValSpeed.textContent    = fmtPoints(m.accuracy);
+    perfValAccuracy.textContent = fmtPoints(m.stamina);
+    perfValStamina.textContent  = fmtPoints(m.ln_control);
 
     setTimeout(() => {
-      perfBarAim.style.width      = `${clampWidth(m.speed)}%`;
-      perfBarSpeed.style.width    = `${clampWidth(m.accuracy)}%`;
-      perfBarAccuracy.style.width = `${clampWidth(m.stamina)}%`;
-      perfBarStamina.style.width  = `${clampWidth(m.ln_control)}%`;
+      perfBarAim.style.width      = `${calcBarWidth(m.speed)}%`;
+      perfBarSpeed.style.width    = `${calcBarWidth(m.accuracy)}%`;
+      perfBarAccuracy.style.width = `${calcBarWidth(m.stamina)}%`;
+      perfBarStamina.style.width  = `${calcBarWidth(m.ln_control)}%`;
     }, 50);
 
   } else {
@@ -780,16 +795,16 @@ function renderPerformanceProfile(data) {
       if (barEl) barEl.className = 'perf-bar-fill perf-bar-fill--stamina';
     }
 
-    perfValAim.textContent      = `${Number(m.aim ?? 0).toFixed(1)} / 10`;
-    perfValSpeed.textContent    = `${Number(m.speed ?? 0).toFixed(1)} / 10`;
-    perfValAccuracy.textContent = `${Number(m.accuracy ?? 0).toFixed(1)} / 10`;
-    perfValStamina.textContent  = `${Number(m.stamina ?? 0).toFixed(1)} / 10`;
+    perfValAim.textContent      = fmtPoints(m.aim);
+    perfValSpeed.textContent    = fmtPoints(m.speed);
+    perfValAccuracy.textContent = fmtPoints(m.accuracy);
+    perfValStamina.textContent  = fmtPoints(m.stamina);
 
     setTimeout(() => {
-      perfBarAim.style.width      = `${clampWidth(m.aim)}%`;
-      perfBarSpeed.style.width    = `${clampWidth(m.speed)}%`;
-      perfBarAccuracy.style.width = `${clampWidth(m.accuracy)}%`;
-      perfBarStamina.style.width  = `${clampWidth(m.stamina)}%`;
+      perfBarAim.style.width      = `${calcBarWidth(m.aim)}%`;
+      perfBarSpeed.style.width    = `${calcBarWidth(m.speed)}%`;
+      perfBarAccuracy.style.width = `${calcBarWidth(m.accuracy)}%`;
+      perfBarStamina.style.width  = `${calcBarWidth(m.stamina)}%`;
     }, 50);
   }
 
@@ -870,8 +885,44 @@ perfRetryBtn.addEventListener('click', () => {
 //
 
 const CHANGELOG = {
-  currentVersion: 'v1.9',
+  currentVersion: 'v2.0.0',
   releases: [
+    {
+      version: 'v2.0.0',
+      date: 'August 14, 2026',
+      title: 'Point-Based Performance Profile',
+      sections: [
+        {
+          type: 'new',
+          title: '✨ Point-Based Performance Profile',
+          items: [
+            { desc: 'Replaced the previous 0–10 Performance Profile rating system with an unlimited Skill Point system.' },
+            { desc: 'Skill Points no longer have a hard 10.0 ceiling, allowing elite players to be differentiated with granular values.' },
+            { desc: 'Added construct-specific Point Anchors and Exponents for all four supported rulesets (Standard, Mania, Catch, Taiko).' },
+            { desc: 'Added points_raw (2 decimal float) in backend API alongside clean integer points display.' }
+          ]
+        },
+        {
+          type: 'improved',
+          title: '⚡ UI & Visual Progress Bar Progression',
+          items: [
+            { desc: 'Replaced "X.X / 10" display with "X,XXX pts" (e.g. 1,308 pts) across all Performance Profile cards.' },
+            { desc: 'Added soft-curved visual bar scaling (70% at 1000 pts benchmark) ensuring unlimited points render smoothly without overflowing.' },
+            { desc: 'Preserved the 100-candidate sample pool and adaptive deep-analysis architecture (40 Standard/Mania, 30 Catch/Taiko).' },
+            { desc: 'Preserved Top-5 decay aggregation (0.90^j) and exact underlying WeightedRaw calculations.' }
+          ]
+        },
+        {
+          type: 'fixed',
+          title: '🔒 Compatibility & Safety',
+          items: [
+            { desc: 'Added isolated v3 cache versions (v3_points_${mode}) to prevent legacy 0–10 cached results from colliding.' },
+            { desc: 'Maintained strict formula integrity with zero changes to existing play-level mechanics across all 14 skill dimensions.' },
+            { desc: 'Preserved responsive mobile layout across all device viewports.' }
+          ]
+        }
+      ]
+    },
     {
       version: 'v1.9',
       date: 'August 14, 2026',
