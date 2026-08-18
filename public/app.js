@@ -47,12 +47,25 @@ const statAccuracy  = document.getElementById('statAccuracy');
 const statPlayCount = document.getElementById('statPlayCount');
 const statLevel = document.getElementById('statLevel');
 
-// Performance Profile DOM references
+// Archetype & Performance Profile DOM references
+const cardArchetypeBadge   = document.getElementById('cardArchetypeBadge');
+const cardArchetypeText    = document.getElementById('cardArchetypeText');
+const perfArchetypeBadge   = document.getElementById('perfArchetypeBadge');
+const perfArchetypeText    = document.getElementById('perfArchetypeText');
+
 const perfProfileContainer = document.getElementById('perfProfileContainer');
 const perfLoading          = document.getElementById('perfLoading');
 const perfError            = document.getElementById('perfError');
 const perfRetryBtn         = document.getElementById('perfRetryBtn');
 const perfContent          = document.getElementById('perfContent');
+
+const btnPerfList          = document.getElementById('btnPerfList');
+const btnPerfRadar         = document.getElementById('btnPerfRadar');
+const perfGrid             = document.getElementById('perfGrid');
+const perfRadarWrapper     = document.getElementById('perfRadarWrapper');
+const perfRadarSvg         = document.getElementById('perfRadarSvg');
+const perfRadarLegend      = document.getElementById('perfRadarLegend');
+const perfRadarA11yText    = document.getElementById('perfRadarA11yText');
 
 const perfValAim           = document.getElementById('perfValAim');
 const perfValSpeed         = document.getElementById('perfValSpeed');
@@ -81,6 +94,30 @@ let pendingProfileUrl    = '#';
 function fmtNumber(n) {
   if (n == null) return '—';
   return Math.round(n).toLocaleString('en-US');
+}
+
+/**
+ * Format skill points as "1,234 pts" or '0 pts'.
+ */
+function fmtPoints(pts) {
+  if (pts == null || Number.isNaN(Number(pts))) return '0 pts';
+  return `${Math.round(Number(pts)).toLocaleString('en-US')} pts`;
+}
+
+/**
+ * Calculate progress bar fill percentage for list view.
+ * 1000 pts maps to 70% width, higher points softly approach 100%.
+ */
+function calcBarWidth(pts) {
+  const p = Number(pts) || 0;
+  if (p <= 0) return 0;
+  if (p <= 1000) {
+    return Math.max(0, Math.min(100, 70 * (p / 1000)));
+  } else {
+    const excess = p - 1000;
+    const w = 70 + 30 * (1 - Math.exp(-excess / 600));
+    return Math.max(0, Math.min(100, w));
+  }
 }
 
 /**
@@ -279,6 +316,16 @@ async function renderCard(user) {
     const profileUrl = buildOsuProfileUrl(user.username, user.mode);
     viewProfileBtn.href = profileUrl;
     viewProfileBtn.setAttribute('aria-label', `View ${user.username}'s osu! profile`);
+  }
+
+  // ── Reset archetype badges ─────────────────────────────────────────────
+  if (cardArchetypeBadge) {
+    cardArchetypeBadge.hidden = true;
+    if (cardArchetypeText) cardArchetypeText.textContent = '—';
+  }
+  if (perfArchetypeBadge) {
+    perfArchetypeBadge.hidden = true;
+    if (perfArchetypeText) perfArchetypeText.textContent = '—';
   }
 
   // ── Show card ───────────────────────────────────────────────────────────
@@ -593,6 +640,360 @@ async function fetchPerformance(username, mode) {
 }
 
 /**
+ * Deterministically compute the player's performance archetype title based solely on Skill Points.
+ */
+function computeArchetypeTitle(metrics, mode) {
+  if (!metrics) return null;
+
+  if (mode === 'osu') {
+    const { aim = 0, speed = 0, stamina = 0, accuracy = 0 } = metrics;
+    const vals = [
+      { key: 'aim', pts: aim, title: 'Aim Prodigy' },
+      { key: 'speed', pts: speed, title: 'Speed Demon' },
+      { key: 'stamina', pts: stamina, title: 'Stamina Titan' },
+      { key: 'accuracy', pts: accuracy, title: 'Rhythm Virtuoso' }
+    ];
+    vals.sort((a, b) => b.pts - a.pts);
+    const maxVal = vals[0].pts;
+    const secondMax = vals[1].pts;
+    const minVal = vals[3].pts;
+    const avg = (aim + speed + stamina + accuracy) / 4;
+    const dominanceRatio = maxVal / Math.max(1, secondMax);
+
+    if (minVal >= 850 && (maxVal - minVal) <= 350 && avg >= 950) {
+      return 'Apex All-Rounder';
+    }
+    if ((maxVal >= 900 && dominanceRatio >= 1.12) || (maxVal >= 600 && dominanceRatio >= 1.25)) {
+      return vals[0].title;
+    }
+    if (avg >= 850) {
+      return 'Apex All-Rounder';
+    }
+    if (avg >= 450) {
+      return 'Rising Star';
+    }
+    return 'Challenger';
+
+  } else if (mode === 'mania') {
+    const { speed = 0, accuracy = 0, stamina = 0, ln_control = 0 } = metrics;
+    const vals = [
+      { key: 'speed', pts: speed, title: 'Chordstream Blitz' },
+      { key: 'accuracy', pts: accuracy, title: 'Metronome Virtuoso' },
+      { key: 'stamina', pts: stamina, title: 'Jackhammer Titan' },
+      { key: 'ln_control', pts: ln_control, title: 'Release Specialist' }
+    ];
+    vals.sort((a, b) => b.pts - a.pts);
+    const maxVal = vals[0].pts;
+    const secondMax = vals[1].pts;
+    const minVal = vals[3].pts;
+    const avg = (speed + accuracy + stamina + ln_control) / 4;
+    const dominanceRatio = maxVal / Math.max(1, secondMax);
+
+    if (minVal >= 850 && (maxVal - minVal) <= 350 && avg >= 950) {
+      return 'VSRG Grandmaster';
+    }
+    if ((maxVal >= 900 && dominanceRatio >= 1.12) || (maxVal >= 600 && dominanceRatio >= 1.25)) {
+      return vals[0].title;
+    }
+    if (avg >= 850) {
+      return 'VSRG Grandmaster';
+    }
+    if (avg >= 450) {
+      return 'Rising Star';
+    }
+    return 'Challenger';
+
+  } else if (mode === 'fruits') {
+    const { movement = 0, accuracy = 0 } = metrics;
+    const maxVal = Math.max(movement, accuracy);
+    const minVal = Math.min(movement, accuracy);
+    const avg = (movement + accuracy) / 2;
+    const ratio = maxVal / Math.max(1, minVal);
+
+    if (minVal >= 900 && ratio < 1.10) {
+      return 'Catch Virtuoso';
+    }
+    if ((maxVal >= 900 && ratio >= 1.10) || (maxVal >= 600 && ratio >= 1.20)) {
+      return movement >= accuracy ? 'Hyperdash Maestro' : 'Droplet Perfectionist';
+    }
+    if (avg >= 850) {
+      return 'Catch Virtuoso';
+    }
+    if (avg >= 450) {
+      return 'Rising Star';
+    }
+    return 'Challenger';
+
+  } else if (mode === 'taiko') {
+    const { reading = 0, speed = 0, stamina = 0, technical = 0 } = metrics;
+    const vals = [
+      { key: 'reading', pts: reading, title: 'Pattern Alchemist' },
+      { key: 'speed', pts: speed, title: 'Drumroll Blitz' },
+      { key: 'stamina', pts: stamina, title: 'Endurance Drummer' },
+      { key: 'technical', pts: technical, title: 'Pattern Alchemist' }
+    ];
+    vals.sort((a, b) => b.pts - a.pts);
+    const maxVal = vals[0].pts;
+    const secondMax = vals[1].pts;
+    const minVal = vals[3].pts;
+    const avg = (reading + speed + stamina + technical) / 4;
+    const dominanceRatio = maxVal / Math.max(1, secondMax);
+
+    // Reading + Technical dominance check
+    const techReadingAvg = (reading + technical) / 2;
+    const speedStaminaAvg = (speed + stamina) / 2;
+    if (techReadingAvg >= 900 && (techReadingAvg / Math.max(1, speedStaminaAvg)) >= 1.08) {
+      return 'Pattern Alchemist';
+    }
+
+    if (minVal >= 900 && (maxVal - minVal) <= 350 && avg >= 950) {
+      return 'Taiko Grandmaster';
+    }
+    if ((maxVal >= 900 && dominanceRatio >= 1.12) || (maxVal >= 600 && dominanceRatio >= 1.25)) {
+      return vals[0].title;
+    }
+    if (avg >= 850) {
+      return 'Taiko Grandmaster';
+    }
+    if (avg >= 450) {
+      return 'Rising Star';
+    }
+    return 'Challenger';
+  }
+
+  return null;
+}
+
+/**
+ * Radial mapping:
+ * - 1000 pts maps to 70% of R_MAX (71.4px)
+ * - >1000 pts softly approaches R_MAX (102px) via 71.4 + 30.6 * (1 - exp(-(pts - 1000) / 600))
+ */
+function getRadarRadius(pts) {
+  const p = Math.max(0, Number(pts) || 0);
+  if (p === 0) return 0;
+  if (p <= 1000) {
+    return 71.4 * (p / 1000);
+  } else {
+    const excess = p - 1000;
+    return 71.4 + 30.6 * (1 - Math.exp(-excess / 600));
+  }
+}
+
+/**
+ * Render Radar / Spider Chart SVG.
+ */
+function renderRadarChart(metrics, mode) {
+  if (!perfRadarSvg || !metrics) return;
+
+  const cx = 160;
+  const cy = 160;
+  const R_MAX = 102;
+
+  let axes = [];
+  if (mode === 'osu') {
+    axes = [
+      { key: 'aim',      name: 'AIM',      color: '#ec4899' },
+      { key: 'speed',    name: 'SPEED',    color: '#06b6d4' },
+      { key: 'stamina',  name: 'STAMINA',  color: '#eab308' },
+      { key: 'accuracy', name: 'ACCURACY', color: '#a855f7' },
+    ];
+  } else if (mode === 'mania') {
+    axes = [
+      { key: 'speed',      name: 'SPEED',      color: '#06b6d4' },
+      { key: 'accuracy',   name: 'ACCURACY',   color: '#a855f7' },
+      { key: 'stamina',    name: 'STAMINA',    color: '#eab308' },
+      { key: 'ln_control', name: 'LN CONTROL', color: '#10b981' },
+    ];
+  } else if (mode === 'fruits') {
+    axes = [
+      { key: 'movement', name: 'MOVEMENT', color: '#10b981' },
+      { key: 'accuracy', name: 'ACCURACY', color: '#a855f7' },
+    ];
+  } else if (mode === 'taiko') {
+    axes = [
+      { key: 'reading',   name: 'READING',   color: '#a855f7' },
+      { key: 'speed',     name: 'SPEED',     color: '#06b6d4' },
+      { key: 'stamina',   name: 'STAMINA',   color: '#eab308' },
+      { key: 'technical', name: 'TECHNICAL', color: '#f43f5e' },
+    ];
+  }
+
+  // Update screen-reader accessible description
+  if (perfRadarA11yText) {
+    const a11ySummary = axes.map(a => `${a.name} ${fmtNumber(metrics[a.key])} pts`).join(', ');
+    perfRadarA11yText.textContent = `Performance radar: ${a11ySummary}.`;
+  }
+
+  // Build SVG content
+  let svgHtml = `
+    <defs>
+      <radialGradient id="radarGradient" cx="50%" cy="50%" r="50%">
+        <stop offset="0%" stop-color="rgba(255, 102, 170, 0.45)" />
+        <stop offset="100%" stop-color="rgba(68, 221, 255, 0.15)" />
+      </radialGradient>
+    </defs>
+  `;
+
+  if (axes.length === 4) {
+    const angles = [-Math.PI / 2, 0, Math.PI / 2, Math.PI];
+
+    // Grid Concentric Rings (500, 1000 benchmark, 1500)
+    const ringTiers = [
+      { pts: 500,  r: 35.7, isBenchmark: false },
+      { pts: 1000, r: 71.4, isBenchmark: true },
+      { pts: 1500, r: 88.7, isBenchmark: false }
+    ];
+
+    ringTiers.forEach(tier => {
+      const ringPts = angles.map(a => `${(cx + tier.r * Math.cos(a)).toFixed(1)},${(cy + tier.r * Math.sin(a)).toFixed(1)}`).join(' ');
+      if (tier.isBenchmark) {
+        svgHtml += `<polygon points="${ringPts}" class="radar-benchmark-ring" />`;
+        svgHtml += `<text x="${cx + 4}" y="${(cy - tier.r + 11).toFixed(1)}" class="radar-benchmark-label">1000 pts (Benchmark)</text>`;
+      } else {
+        svgHtml += `<polygon points="${ringPts}" class="radar-grid-polygon" />`;
+      }
+    });
+
+    // Radial Axes
+    axes.forEach((axis, i) => {
+      const a = angles[i];
+      const ax = cx + R_MAX * Math.cos(a);
+      const ay = cy + R_MAX * Math.sin(a);
+      svgHtml += `<line x1="${cx}" y1="${cy}" x2="${ax.toFixed(1)}" y2="${ay.toFixed(1)}" class="radar-axis-line" />`;
+
+      // Label positioning
+      const labelDist = R_MAX + 15;
+      let lx = cx + labelDist * Math.cos(a);
+      let ly = cy + labelDist * Math.sin(a);
+
+      let textAnchor = 'middle';
+      let dy = '0.35em';
+      if (i === 0) { dy = '-0.4em'; }       // Top
+      else if (i === 1) { textAnchor = 'start'; lx += 4; } // Right
+      else if (i === 2) { dy = '1.05em'; }       // Bottom
+      else if (i === 3) { textAnchor = 'end'; lx -= 4; }   // Left
+
+      const val = metrics[axis.key] || 0;
+      svgHtml += `
+        <text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" text-anchor="${textAnchor}" dy="${dy}">
+          <tspan class="radar-axis-label" fill="${axis.color}">${axis.name}</tspan>
+          <tspan x="${lx.toFixed(1)}" dy="1.15em" class="radar-axis-value">${fmtNumber(val)} pts</tspan>
+        </text>
+      `;
+    });
+
+    // Data Polygon
+    const dataPoints = axes.map((axis, i) => {
+      const r = getRadarRadius(metrics[axis.key]);
+      const px = cx + r * Math.cos(angles[i]);
+      const py = cy + r * Math.sin(angles[i]);
+      return `${px.toFixed(1)},${py.toFixed(1)}`;
+    }).join(' ');
+
+    svgHtml += `<polygon points="${dataPoints}" class="radar-data-polygon" />`;
+
+    // Vertex dots
+    axes.forEach((axis, i) => {
+      const r = getRadarRadius(metrics[axis.key]);
+      const px = cx + r * Math.cos(angles[i]);
+      const py = cy + r * Math.sin(angles[i]);
+      svgHtml += `<circle cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="4" class="radar-vertex-dot" stroke="${axis.color}" />`;
+    });
+
+  } else if (axes.length === 2) {
+    // Fruits (osu!catch) 2-Skill Diamond Layout
+    const rMov = getRadarRadius(metrics.movement);
+    const rAcc = getRadarRadius(metrics.accuracy);
+    const rWing = Math.max(24, (rMov + rAcc) / 2 * 0.65);
+
+    // Concentric benchmark rings for diamond
+    const ringTiers = [
+      { rY: 35.7, rX: 24.0, isBenchmark: false },
+      { rY: 71.4, rX: 48.0, isBenchmark: true },
+      { rY: 88.7, rX: 60.0, isBenchmark: false }
+    ];
+
+    ringTiers.forEach(tier => {
+      const ringPts = `${cx},${(cy - tier.rY).toFixed(1)} ${(cx + tier.rX).toFixed(1)},${cy} ${cx},${(cy + tier.rY).toFixed(1)} ${(cx - tier.rX).toFixed(1)},${cy}`;
+      if (tier.isBenchmark) {
+        svgHtml += `<polygon points="${ringPts}" class="radar-benchmark-ring" />`;
+        svgHtml += `<text x="${cx + 4}" y="${(cy - tier.rY + 11).toFixed(1)}" class="radar-benchmark-label">1000 pts (Benchmark)</text>`;
+      } else {
+        svgHtml += `<polygon points="${ringPts}" class="radar-grid-polygon" />`;
+      }
+    });
+
+    // Cross axes
+    svgHtml += `<line x1="${cx}" y1="${cy - R_MAX}" x2="${cx}" y2="${cy + R_MAX}" class="radar-axis-line" />`;
+    svgHtml += `<line x1="${cx - 65}" y1="${cy}" x2="${cx + 65}" y2="${cy}" class="radar-axis-line" />`;
+
+    // Labels
+    const valMov = metrics.movement || 0;
+    const valAcc = metrics.accuracy || 0;
+    svgHtml += `
+      <text x="${cx}" y="${cy - R_MAX - 12}" text-anchor="middle">
+        <tspan class="radar-axis-label" fill="${axes[0].color}">${axes[0].name}</tspan>
+        <tspan x="${cx}" dy="1.15em" class="radar-axis-value">${fmtNumber(valMov)} pts</tspan>
+      </text>
+      <text x="${cx}" y="${cy + R_MAX + 15}" text-anchor="middle">
+        <tspan class="radar-axis-label" fill="${axes[1].color}">${axes[1].name}</tspan>
+        <tspan x="${cx}" dy="1.15em" class="radar-axis-value">${fmtNumber(valAcc)} pts</tspan>
+      </text>
+    `;
+
+    // Data Diamond Polygon
+    const dataPoints = `${cx},${(cy - rMov).toFixed(1)} ${(cx + rWing).toFixed(1)},${cy} ${cx},${(cy + rAcc).toFixed(1)} ${(cx - rWing).toFixed(1)},${cy}`;
+    svgHtml += `<polygon points="${dataPoints}" class="radar-data-polygon" />`;
+
+    // Vertex dots
+    svgHtml += `<circle cx="${cx}" cy="${(cy - rMov).toFixed(1)}" r="4" class="radar-vertex-dot" stroke="${axes[0].color}" />`;
+    svgHtml += `<circle cx="${cx}" cy="${(cy + rAcc).toFixed(1)}" r="4" class="radar-vertex-dot" stroke="${axes[1].color}" />`;
+  }
+
+  perfRadarSvg.innerHTML = svgHtml;
+
+  // Build Legend
+  if (perfRadarLegend) {
+    perfRadarLegend.innerHTML = axes.map(axis => `
+      <div class="radar-legend-item">
+        <span class="radar-legend-dot" style="background: ${axis.color}"></span>
+        <span class="radar-legend-name">${axis.name}:</span>
+        <span class="radar-legend-val">${fmtPoints(metrics[axis.key])}</span>
+      </div>
+    `).join('');
+  }
+}
+
+/**
+ * Toggle performance view between 'list' and 'radar'.
+ */
+function setPerfView(viewType, updateStorage = true) {
+  const isRadar = viewType === 'radar';
+
+  if (btnPerfList && btnPerfRadar) {
+    btnPerfList.classList.toggle('active', !isRadar);
+    btnPerfList.setAttribute('aria-pressed', (!isRadar).toString());
+
+    btnPerfRadar.classList.toggle('active', isRadar);
+    btnPerfRadar.setAttribute('aria-pressed', isRadar.toString());
+  }
+
+  if (perfGrid && perfRadarWrapper) {
+    perfGrid.hidden = isRadar;
+    perfRadarWrapper.hidden = !isRadar;
+  }
+
+  if (updateStorage) {
+    try {
+      localStorage.setItem('beatcard_perf_view', isRadar ? 'radar' : 'list');
+    } catch (e) {
+      // Ignore storage errors (private mode, etc.)
+    }
+  }
+}
+
+/**
  * Populate performance UI with the metrics and update progress bars.
  */
 function renderPerformanceProfile(data) {
@@ -612,27 +1013,29 @@ function renderPerformanceProfile(data) {
   const isFruits = data.mode === 'fruits';
   const isTaiko = data.mode === 'taiko';
 
+  // Compute and display Player Archetype Title
+  const archetypeTitle = computeArchetypeTitle(m, data.mode);
+  if (archetypeTitle) {
+    if (cardArchetypeBadge && cardArchetypeText) {
+      cardArchetypeText.textContent = archetypeTitle;
+      cardArchetypeBadge.hidden = false;
+    }
+    if (perfArchetypeBadge && perfArchetypeText) {
+      perfArchetypeText.textContent = archetypeTitle;
+      perfArchetypeBadge.hidden = false;
+    }
+  } else {
+    if (cardArchetypeBadge) cardArchetypeBadge.hidden = true;
+    if (perfArchetypeBadge) perfArchetypeBadge.hidden = true;
+  }
+
+  // Render SVG Radar Chart
+  renderRadarChart(m, data.mode);
+
   const card1 = document.querySelector('.perf-grid > div:nth-child(1)');
   const card2 = document.querySelector('.perf-grid > div:nth-child(2)');
   const card3 = document.querySelector('.perf-grid > div:nth-child(3)');
   const card4 = document.querySelector('.perf-grid > div:nth-child(4)');
-
-  const fmtPoints = (pts) => {
-    if (pts == null || Number.isNaN(Number(pts))) return '0 pts';
-    return `${Math.round(Number(pts)).toLocaleString('en-US')} pts`;
-  };
-
-  const calcBarWidth = (pts) => {
-    const p = Number(pts) || 0;
-    if (p <= 0) return 0;
-    if (p <= 1000) {
-      return Math.max(0, Math.min(100, 70 * (p / 1000)));
-    } else {
-      const excess = p - 1000;
-      const w = 70 + 30 * (1 - Math.exp(-excess / 600));
-      return Math.max(0, Math.min(100, w));
-    }
-  };
 
   if (isFruits) {
     // Fruits (osu!catch) Layout: MOVEMENT, ACCURACY (2 cards only)
@@ -808,6 +1211,14 @@ function renderPerformanceProfile(data) {
     }, 50);
   }
 
+  // Restore saved view preference
+  try {
+    const savedView = localStorage.getItem('beatcard_perf_view') || 'list';
+    setPerfView(savedView, false);
+  } catch (e) {
+    setPerfView('list', false);
+  }
+
   // Set sample size text dynamically
   if (data.candidate_count && data.candidate_count > data.sample_size) {
     perfSampleSize.textContent = `Based on ${data.sample_size} analyzed plays (${data.candidate_count} candidates \u00b7 Top 5 weighted)`;
@@ -870,7 +1281,14 @@ async function loadPerformanceProfile(username, mode) {
   }
 }
 
-// ── Performance Profile Retry Button ──────────────────────────────────────────
+// ── Performance Profile Toggle & Retry Listeners ─────────────────────────────
+if (btnPerfList) {
+  btnPerfList.addEventListener('click', () => setPerfView('list'));
+}
+if (btnPerfRadar) {
+  btnPerfRadar.addEventListener('click', () => setPerfView('radar'));
+}
+
 perfRetryBtn.addEventListener('click', () => {
   if (lastSearchedUsername && lastSearchedMode) {
     loadPerformanceProfile(lastSearchedUsername, lastSearchedMode);
@@ -885,8 +1303,57 @@ perfRetryBtn.addEventListener('click', () => {
 //
 
 const CHANGELOG = {
-  currentVersion: 'v2.0.0',
+  currentVersion: 'v2.1.0',
   releases: [
+    {
+      version: 'v2.1.0',
+      date: 'August 18, 2026',
+      title: 'Radar Profile, Player Archetypes & Mobile UX Optimization',
+      sections: [
+        {
+          type: 'new',
+          title: '✨ Radar / Spider Performance View',
+          items: [
+            { desc: 'Added native SVG Radar / Spider View with polygon fill, neon accents, vertex dots, and a 1000 pts benchmark ring.' },
+            { desc: 'Added interactive [ LIST ] / [ RADAR ] view switcher with localStorage preference persistence.' },
+            { desc: 'Added dedicated 2-axis Diamond Radar layout for osu!catch (Movement & Accuracy).' },
+            { desc: 'Added accessible screen reader summary and dynamic color-coded metric legend for all four rulesets.' }
+          ]
+        },
+        {
+          type: 'new',
+          title: '👑 Player Archetype Titles',
+          items: [
+            { desc: 'Added deterministic Player Archetype Title system based strictly on player Skill Points and ruleset.' },
+            { desc: 'Standard Archetypes: Aim Prodigy, Speed Demon, Stamina Titan, Rhythm Virtuoso, Apex All-Rounder, Rising Star, Challenger.' },
+            { desc: 'Mania Archetypes: Chordstream Blitz, Metronome Virtuoso, Jackhammer Titan, Release Specialist, VSRG Grandmaster.' },
+            { desc: 'Catch Archetypes: Hyperdash Maestro, Droplet Perfectionist, Catch Virtuoso.' },
+            { desc: 'Taiko Archetypes: Pattern Alchemist, Drumroll Blitz, Endurance Drummer, Taiko Grandmaster.' },
+            { desc: 'Prominently displayed on both the Player Card preview and the Performance Profile header.' }
+          ]
+        },
+        {
+          type: 'improved',
+          title: '📱 Mobile UI/UX & Responsive Layout Optimization',
+          items: [
+            { desc: 'Redesigned Performance Profile List View into an intuitive, spacious single-column layout on mobile devices.' },
+            { desc: 'Fixed CSS cascade ordering to ensure mobile media query overrides apply reliably across all viewports.' },
+            { desc: 'Optimized Player Card identity spacing, archetype badge scaling, and vertical padding to eliminate clipping on small screens.' },
+            { desc: 'Ensured full touch target compliance (>= 42px) for toggle buttons, download actions, and retry triggers.' },
+            { desc: 'Added safe-area inset support (env(safe-area-inset-*)) for seamless display on notched mobile displays.' }
+          ]
+        },
+        {
+          type: 'fixed',
+          title: '🔒 Point Normalization & Formula Integrity',
+          items: [
+            { desc: 'Implemented soft asymptotic radial normalization (r = 71.4 + 30.6 * (1 - e^(-(pts-1000)/600))) guaranteeing radar containment within 102px.' },
+            { desc: 'Preserved 100% backend formula integrity, point conversion models, and WeightedRaw calculations (Delta = 0.0000).' },
+            { desc: 'Preserved native 1200x630 PNG card export functionality.' }
+          ]
+        }
+      ]
+    },
     {
       version: 'v2.0.0',
       date: 'August 14, 2026',

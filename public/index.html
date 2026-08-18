@@ -174,10 +174,17 @@
                   <img class="card-avatar" id="cardAvatar" src="" alt="Player avatar" loading="eager" />
                 </div>
                 <div class="card-identity">
-                  <h1 class="card-username" id="cardUsername">—</h1>
+                  <div class="card-identity-header">
+                    <h1 class="card-username" id="cardUsername">—</h1>
 
-                  <!-- Selected game mode -->
-                  <span class="card-mode" id="cardMode"> osu! STANDARD </span>
+                    <!-- Selected game mode -->
+                    <span class="card-mode" id="cardMode"> osu! STANDARD </span>
+
+                    <div class="card-archetype-badge" id="cardArchetypeBadge" hidden>
+                      <span class="archetype-icon" aria-hidden="true">✦</span>
+                      <span class="archetype-text" id="cardArchetypeText">—</span>
+                    </div>
+                  </div>
 
                   <div class="card-country" id="cardCountry">
                     <img class="card-flag" id="cardFlag" src="" alt="" aria-hidden="true" />
@@ -238,8 +245,26 @@
         <!-- Performance Profile Section -->
         <div class="perf-profile-container" id="perfProfileContainer" hidden>
           <div class="perf-header">
-            <h2 class="perf-title">PERFORMANCE PROFILE</h2>
-            <p class="perf-subtitle">BeatCard Derived Metrics</p>
+            <div class="perf-header-titles">
+              <div class="perf-title-group">
+                <h2 class="perf-title">PERFORMANCE PROFILE</h2>
+                <div class="perf-archetype-badge" id="perfArchetypeBadge" hidden>
+                  <span class="archetype-icon" aria-hidden="true">✦</span>
+                  <span class="archetype-text" id="perfArchetypeText">—</span>
+                </div>
+              </div>
+              <p class="perf-subtitle">BeatCard Derived Metrics</p>
+            </div>
+            <div class="perf-view-toggle" role="group" aria-label="Performance Profile View">
+              <button type="button" class="perf-toggle-btn active" id="btnPerfList" aria-pressed="true" aria-label="List View">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+                <span>List</span>
+              </button>
+              <button type="button" class="perf-toggle-btn" id="btnPerfRadar" aria-pressed="false" aria-label="Radar View">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5 12 2"/></svg>
+                <span>Radar</span>
+              </button>
+            </div>
           </div>
 
           <!-- Loading state -->
@@ -258,7 +283,8 @@
 
           <!-- Metrics content -->
           <div class="perf-content" id="perfContent" hidden>
-            <div class="perf-grid">
+            <!-- List Grid View -->
+            <div class="perf-grid" id="perfGrid">
               <!-- AIM -->
               <div class="perf-card perf-card--aim">
                 <div class="perf-card-header">
@@ -301,6 +327,15 @@
                 <div class="perf-bar-bg" aria-hidden="true">
                   <div class="perf-bar-fill perf-bar-fill--stamina" id="perfBarStamina" style="width: 0%"></div>
                 </div>
+              </div>
+            </div>
+
+            <!-- Radar / Spider View -->
+            <div class="perf-radar-wrapper" id="perfRadarWrapper" hidden>
+              <div class="perf-radar-card">
+                <span class="sr-only" id="perfRadarA11yText">Performance radar chart</span>
+                <svg id="perfRadarSvg" class="perf-radar-svg" viewBox="0 0 320 320" aria-hidden="true"></svg>
+                <div class="perf-radar-legend" id="perfRadarLegend"></div>
               </div>
             </div>
 
